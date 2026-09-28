@@ -3905,18 +3905,19 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   </div>
                 </div>
 
-                  {/* Checkout Button */}
+                  {/* Checkout Button with 1cm gap above & bright eye-catching colors */}
                   <button
                     disabled={cart.length === 0 || numericPaid < totalAmount}
                     onClick={handleCheckout}
-                    className={`w-full py-4 rounded-xl font-black text-base shadow-lg flex items-center justify-center space-x-2 transition border-2 ${
+                    style={{ marginTop: '1cm' }}
+                    className={`w-full py-4 sm:py-4.5 px-4 rounded-2xl font-black text-lg sm:text-xl shadow-2xl flex items-center justify-center space-x-2.5 transition-all border-4 ${
                       cart.length === 0 || numericPaid < totalAmount
                         ? 'bg-slate-300 text-slate-700 border-slate-400 cursor-not-allowed shadow-none'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-800 shadow-emerald-200 cursor-pointer active:scale-98'
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-amber-300 ring-4 ring-emerald-400/60 shadow-emerald-500/50 cursor-pointer active:scale-98 tracking-wide animate-bounce'
                     }`}
                   >
-                    <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
-                    <span>Selesaikan Transaksi & Bayar</span>
+                    <CheckCircle2 className="w-7 h-7 stroke-[3] text-slate-950 shrink-0" />
+                    <span>Bayar dan Transaksi Selesai</span>
                   </button>
                 </div>
               </div>
@@ -4067,8 +4068,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 </p>
               </div>
 
-              {/* Action Buttons: 1. Big "Tambah Barang / Jasa Baru", 2. Small Export/Import CSV */}
-              <div className="flex flex-col gap-2 w-full md:w-auto max-w-full overflow-hidden">
+              {/* Action Buttons: 1. Big "Tambah Barang / Jasa Baru", 2. Export CSV & Import CSV side by side */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto max-w-full overflow-hidden">
                 <button
                   onClick={() => {
                     setEditingProductId(null);
@@ -4076,25 +4077,25 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     setIsModalScanning(false);
                     setProductModalOpen(true);
                   }}
-                  className="w-full bg-rose-600 hover:bg-rose-700 text-white px-4 py-3 rounded-xl font-black text-sm sm:text-base shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                  className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-3 rounded-xl font-black text-sm sm:text-base shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                 >
                   <Plus className="w-5 h-5 stroke-[3]" />
                   <span>Tambah Barang / Jasa Baru</span>
                 </button>
 
-                <div className="flex items-center gap-2 w-full">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={exportProductsToCSV}
-                    className="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 sm:flex-none bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Download className="w-4 h-4" />
                     <span>Export CSV</span>
                   </button>
                   <button
                     onClick={() => setImportModalOpen(true)}
-                    className="flex-1 bg-indigo-700 hover:bg-indigo-800 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 sm:flex-none bg-indigo-700 hover:bg-indigo-800 text-white px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Upload className="w-4 h-4" />
+                    <Upload className="w-4 h-4 text-white" />
                     <span>Import CSV</span>
                   </button>
                 </div>
