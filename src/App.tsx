@@ -636,8 +636,20 @@ export default function App() {
   // Network Connectivity State
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 
+  // Offline Sync Queue States
+  const [pendingQueueCount, setPendingQueueCount] = useState<number>(() => {
+    try {
+      const q = localStorage.getItem('tokobazar_pending_tx_queue');
+      return q ? JSON.parse(q).length : 0;
+    } catch { return 0; }
+  });
+  const [isSyncingQueue, setIsSyncingQueue] = useState<boolean>(false);
+
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
+    const handleOnline = () => {
+      setIsOnline(true);
+      syncPendingTransactions();
+    };
     const handleOffline = () => setIsOnline(false);
 
     window.addEventListener('online', handleOnline);
@@ -649,41 +661,60 @@ export default function App() {
     };
   }, []);
 
-  // Offline Transaction Queue Auto-Sync Effect
-  useEffect(() => {
-    const syncPendingTransactions = async () => {
-      if (!navigator.onLine) return;
-      try {
-        const pendingQueueStr = localStorage.getItem('tokobazar_pending_tx_queue');
-        if (!pendingQueueStr) return;
-        const queue: any[] = JSON.parse(pendingQueueStr);
-        if (queue.length === 0) return;
+  // Offline Transaction Queue Auto-Sync Function
+  const syncPendingTransactions = async () => {
+    try {
+      const pendingQueueStr = localStorage.getItem('tokobazar_pending_tx_queue');
+      if (!pendingQueueStr) {
+        setPendingQueueCount(0);
+        return;
+      }
+      const queue: any[] = JSON.parse(pendingQueueStr);
+      setPendingQueueCount(queue.length);
+      if (queue.length === 0) return;
 
-        console.log(`Auto-syncing ${queue.length} pending offline transactions to Cloudflare D1...`);
-        const remainingQueue = [];
-        for (const tx of queue) {
-          try {
-            const res = await fetch('/api/transactions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(tx)
-            });
-            if (!res.ok) {
-              remainingQueue.push(tx);
-            }
-          } catch {
+      if (!navigator.onLine) {
+        console.log(`Currently offline. ${queue.length} transactions waiting in queue.`);
+        return;
+      }
+
+      setIsSyncingQueue(true);
+      console.log(`Auto-syncing ${queue.length} pending offline transactions to Cloudflare D1...`);
+      const remainingQueue = [];
+      let successCount = 0;
+
+      for (const tx of queue) {
+        try {
+          const res = await fetch('/api/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(tx)
+          });
+          if (res.ok) {
+            successCount++;
+          } else {
             remainingQueue.push(tx);
           }
+        } catch {
+          remainingQueue.push(tx);
         }
-        localStorage.setItem('tokobazar_pending_tx_queue', JSON.stringify(remainingQueue));
-        if (remainingQueue.length < queue.length) {
-          fetchTransactions();
-        }
-      } catch (e) {
-        console.error('Failed to sync offline queue', e);
       }
-    };
 
+      localStorage.setItem('tokobazar_pending_tx_queue', JSON.stringify(remainingQueue));
+      setPendingQueueCount(remainingQueue.length);
+
+      if (successCount > 0) {
+        fetchTransactions();
+        showAlert(`✅ ${successCount} transaksi offline berhasil disinkronkan ke Cloudflare D1!`, 'success');
+      }
+    } catch (e) {
+      console.error('Failed to sync offline queue', e);
+    } finally {
+      setIsSyncingQueue(false);
+    }
+  };
+
+  useEffect(() => {
     window.addEventListener('online', syncPendingTransactions);
     if (navigator.onLine) {
       syncPendingTransactions();
@@ -1289,6 +1320,7 @@ export default function App() {
         const existingQueue = JSON.parse(localStorage.getItem('tokobazar_pending_tx_queue') || '[]');
         existingQueue.push(txData);
         localStorage.setItem('tokobazar_pending_tx_queue', JSON.stringify(existingQueue));
+        setPendingQueueCount(existingQueue.length);
 
         setTransactions(prev => [txData, ...prev]);
         setCompletedTx(txData as any);
@@ -1325,6 +1357,7 @@ export default function App() {
         const existingQueue = JSON.parse(localStorage.getItem('tokobazar_pending_tx_queue') || '[]');
         existingQueue.push(txData);
         localStorage.setItem('tokobazar_pending_tx_queue', JSON.stringify(existingQueue));
+        setPendingQueueCount(existingQueue.length);
 
         setTransactions(prev => [txData, ...prev]);
         setCompletedTx(txData as any);
@@ -2563,6 +2596,41 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     {isCharging && <span className="text-[9px] text-emerald-400">⚡</span>}
                   </div>
                 )}
+
+                {/* Offline Sync Status Badge (Cloudflare D1 Queue Indicator) */}
+                {(pendingQueueCount > 0 || isSyncingQueue) && (
+                  <button
+                    type="button"
+                    onClick={syncPendingTransactions}
+                    title={
+                      isSyncingQueue
+                        ? `Sedang mengunggah ${pendingQueueCount} transaksi offline ke Cloudflare D1...`
+                        : !isOnline
+                        ? `${pendingQueueCount} transaksi tersimpan di memori HP. Otomatis dikirim saat online (Klik untuk coba sinkronkan)`
+                        : `${pendingQueueCount} transaksi dalam antrean offline. Klik untuk sinkronkan ke Cloudflare D1 sekarang`
+                    }
+                    className={`flex items-center space-x-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-black shadow-lg border transition-all cursor-pointer shrink-0 ${
+                      isSyncingQueue
+                        ? 'bg-cyan-950 text-cyan-300 border-cyan-400 ring-2 ring-cyan-400/60 animate-pulse'
+                        : !isOnline
+                        ? 'bg-amber-950 text-amber-300 border-amber-400 hover:bg-amber-900'
+                        : 'bg-emerald-950 text-emerald-300 border-emerald-400 hover:bg-emerald-900'
+                    }`}
+                  >
+                    {isSyncingQueue ? (
+                      <RefreshCw className="w-3.5 h-3.5 text-cyan-300 animate-spin shrink-0" />
+                    ) : (
+                      <Cloud className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    )}
+                    <span className="font-mono tracking-tight">
+                      {isSyncingQueue
+                        ? `Syncing D1... (${pendingQueueCount})`
+                        : !isOnline
+                        ? `⚡ ${pendingQueueCount} Antrean`
+                        : `☁️ Kirim ${pendingQueueCount} D1`}
+                    </span>
+                  </button>
+                )}
               </div>
               <p className="text-[10px] sm:text-[11px] text-slate-300 font-semibold truncate leading-tight flex items-center gap-1">
                 <span>👤 {currentUser.name}</span>
@@ -2836,6 +2904,45 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
               {/* Status & Logout Button */}
               <div className="pt-3 border-t border-slate-800 space-y-2">
+                {/* Offline Queue Indicator Card in Drawer */}
+                {(pendingQueueCount > 0 || isSyncingQueue) && (
+                  <div className="bg-slate-950 border-2 border-cyan-500/60 rounded-xl p-3 text-xs space-y-2 shadow-inner">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-1.5 font-bold text-cyan-300">
+                        {isSyncingQueue ? (
+                          <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+                        ) : (
+                          <Cloud className="w-4 h-4 text-amber-400" />
+                        )}
+                        <span>Antrean Offline Cloudflare D1</span>
+                      </div>
+                      <span className="font-mono text-xs font-black text-amber-300 bg-amber-950 px-2 py-0.5 rounded border border-amber-500/40">
+                        {pendingQueueCount} Transaksi
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-tight">
+                      {isSyncingQueue
+                        ? '🔄 Sedang mengunggah antrean transaksi lokal ke database Cloudflare D1...'
+                        : !isOnline
+                        ? '⚡ Perangkat offline. Transaksi tersimpan aman di memori HP dan akan disinkronkan otomatis saat ada koneksi.'
+                        : '☁️ Ada data offline belum terkirim. Ketuk tombol di bawah untuk menyinkronkan sekarang.'}
+                    </p>
+                    {isOnline && !isSyncingQueue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuDropdownOpen(false);
+                          syncPendingTransactions();
+                        }}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-lg text-xs transition flex items-center justify-center space-x-1.5 shadow-sm cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Kirim {pendingQueueCount} Data Ke Cloudflare D1 Sekarang</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between text-xs text-slate-300 bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <div className="flex items-center space-x-2">
                     <User className="w-4 h-4 text-amber-400" />
