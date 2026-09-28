@@ -173,13 +173,29 @@ export default function App() {
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'error' | 'success' } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
+  const sanitizeErrorMessage = (rawMessage: string): string => {
+    if (!rawMessage) return 'Terjadi kesalahan pada sistem.';
+    const str = String(rawMessage);
+    if (
+      str.includes('UNIQUE constraint failed') ||
+      str.includes('SQLITE_CONSTRAINT') ||
+      str.includes('products.barcode') ||
+      str.includes('D1_ERROR')
+    ) {
+      return '⚠️ BARCODE SUDAH DIPAKAI! Nomor barcode ini sudah terdaftar untuk barang lain. Silakan gunakan nomor barcode yang berbeda atau edit barang yang sudah ada.';
+    }
+    return str;
+  };
+
   const showAlert = (message: string, type: 'info' | 'error' | 'success' = 'info') => {
-    setToast({ message, type });
+    const finalMsg = type === 'error' ? sanitizeErrorMessage(message) : message;
+    setToast({ message: finalMsg, type });
   };
 
   useEffect(() => {
     if (toast) {
-      const timer = setTimeout(() => setToast(null), 4000);
+      const displayDuration = toast.type === 'error' ? 8000 : 4000;
+      const timer = setTimeout(() => setToast(null), displayDuration);
       return () => clearTimeout(timer);
     }
   }, [toast]);
@@ -3812,23 +3828,30 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
         </div>
       )}
 
-      {/* TOAST NOTIFICATION */}
+      {/* TOAST NOTIFICATION - Senior Friendly Large Readable Error Box */}
       {toast && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4 pointer-events-auto">
-          <div className={`p-4 rounded-xl shadow-xl border flex items-center justify-between gap-3 text-sm font-medium ${
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 max-w-lg w-full px-4 pointer-events-auto">
+          <div className={`p-4 sm:p-5 rounded-2xl shadow-2xl border-3 flex items-start justify-between gap-3 text-base sm:text-lg font-black leading-snug ${
             toast.type === 'error'
-              ? 'bg-rose-50 border-rose-300 text-rose-800'
+              ? 'bg-rose-950 border-rose-500 text-white'
               : toast.type === 'success'
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-              : 'bg-indigo-50 border-indigo-300 text-indigo-800'
+              ? 'bg-emerald-950 border-emerald-400 text-white'
+              : 'bg-slate-900 border-amber-400 text-white'
           }`}>
-            <span>{toast.message}</span>
+            <div className="flex items-start gap-2.5">
+              <span className="text-xl shrink-0 mt-0.5">
+                {toast.type === 'error' ? '🚫' : toast.type === 'success' ? '✅' : 'ℹ️'}
+              </span>
+              <div className="whitespace-pre-line text-sm sm:text-base font-extrabold leading-relaxed">
+                {toast.message}
+              </div>
+            </div>
             <button
               onClick={() => setToast(null)}
-              className="p-1 rounded-md hover:bg-black/5 text-current opacity-70 hover:opacity-100 transition"
+              className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition shrink-0 cursor-pointer"
               aria-label="Tutup"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
