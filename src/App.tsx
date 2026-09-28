@@ -62,7 +62,9 @@ import {
   Key,
   LogOut,
   ShieldAlert,
-  EyeOff
+  EyeOff,
+  QrCode,
+  Banknote
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import html2canvas from 'html2canvas';
@@ -100,6 +102,8 @@ interface Transaction {
   paid_amount: number;
   change_amount: number;
   cashier_name: string;
+  payment_method?: 'TUNAI' | 'QRIS' | string;
+  notes?: string;
   created_at: string;
   items: TransactionItem[];
 }
@@ -205,6 +209,10 @@ export default function App() {
   const [productModalOpen, setProductModalOpen] = useState<boolean>(false);
   const [isModalScanning, setIsModalScanning] = useState<boolean>(false);
   const [productSearch, setProductSearch] = useState<string>('');
+
+  // Payment Method & Notes State (Cash vs QRIS)
+  const [paymentMethod, setPaymentMethod] = useState<'TUNAI' | 'QRIS'>('TUNAI');
+  const [paymentNotes, setPaymentNotes] = useState<string>('');
 
   // Virtual Numpad State
   const [numpadOpen, setNumpadOpen] = useState<boolean>(false);
@@ -1085,6 +1093,8 @@ export default function App() {
     setPaidAmount('');
     setDiscountValue('');
     setTaxValue('');
+    setPaymentMethod('TUNAI');
+    setPaymentNotes('');
     setShowDiscountSection(false);
     setShowTaxSection(false);
     triggerTotalHighlight('Keranjang dikosongkan');
@@ -1132,6 +1142,8 @@ export default function App() {
       paid_amount: numericPaid,
       change_amount: changeAmount,
       cashier_name: cashierName,
+      payment_method: paymentMethod,
+      notes: paymentNotes,
       created_at: new Date().toISOString(),
       items: cart.map(item => ({
         product_name: item.product.name,
@@ -3077,48 +3089,122 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   style={{ marginTop: '1cm', backgroundColor: '#3b0764', borderColor: '#7e22ce' }}
                   className="p-4 rounded-2xl border-4 shadow-2xl space-y-3 text-white"
                 >
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-sm sm:text-base font-black text-amber-300">Uang Diterima dari Pelanggan (Rp)</label>
+                  {/* Payment Method Selector (CASH / UANG TUNAI vs QRIS) */}
+                  <div className="space-y-2 pb-2 border-b border-purple-800">
+                    <label className="block text-xs font-black uppercase tracking-wider text-amber-300">
+                      Metode Pembayaran Pelanggan
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        onClick={() => setNumpadOpen(true)}
-                        className="text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-3 py-1 rounded-lg border-2 border-amber-300 flex items-center gap-1 shadow-xs transition cursor-pointer"
+                        onClick={() => {
+                          setPaymentMethod('TUNAI');
+                        }}
+                        className={`py-2.5 px-3 rounded-xl border-2 font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer ${
+                          paymentMethod === 'TUNAI'
+                            ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md ring-2 ring-amber-300/50'
+                            : 'bg-purple-950/80 text-purple-200 border-purple-700 hover:bg-purple-900'
+                        }`}
                       >
-                        Keypad
+                        <Banknote className="w-4 h-4" />
+                        <span>💵 Uang Tunai</span>
                       </button>
-                    </div>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-3 text-slate-950 font-black text-base">Rp</span>
-                      <input
-                        type="number"
-                        placeholder="0"
-                        value={paidAmount}
-                        onChange={e => setPaidAmount(e.target.value)}
-                        className="w-full pl-11 pr-4 py-2.5 bg-white border-4 border-amber-400 rounded-xl text-slate-950 font-black focus:outline-none focus:ring-4 focus:ring-amber-400/50 transition text-xl shadow-inner"
-                      />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaymentMethod('QRIS');
+                          setPaidAmount(String(totalAmount));
+                        }}
+                        className={`py-2.5 px-3 rounded-xl border-2 font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer ${
+                          paymentMethod === 'QRIS'
+                            ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md ring-2 ring-amber-300/50'
+                            : 'bg-purple-950/80 text-purple-200 border-purple-700 hover:bg-purple-900'
+                        }`}
+                      >
+                        <QrCode className="w-4 h-4" />
+                        <span>📱 QRIS (Non-Tunai)</span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* Quick cash suggestions */}
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-                    {quickCashOptions.map(amt => (
-                      <button
-                        key={amt}
-                        onClick={() => setPaidAmount(String(amt))}
-                        style={{ backgroundColor: '#581c87', borderColor: '#7e22ce' }}
-                        className="hover:bg-amber-400 hover:text-slate-950 text-white text-xs py-1.5 rounded-lg border-2 font-black transition cursor-pointer"
-                      >
-                        {amt >= 1000 ? `${amt / 1000}rb` : amt}
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => setPaidAmount(String(totalAmount))}
-                      className="bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs py-1.5 rounded-lg border-2 border-amber-300 font-black transition col-span-3 sm:col-span-2 cursor-pointer"
-                    >
-                      Uang Pas
-                    </button>
-                  </div>
+                  {paymentMethod === 'QRIS' ? (
+                    <div className="bg-purple-950/90 border-2 border-purple-500 p-3 rounded-xl space-y-2.5">
+                      <div className="flex items-center gap-2 text-xs font-black text-amber-300">
+                        <QrCode className="w-4 h-4 text-amber-300 animate-pulse" />
+                        <span>Pembayaran via QRIS (Nominal Pas: {formatRupiah(totalAmount)})</span>
+                      </div>
+                      <p className="text-[11px] text-purple-200 leading-snug font-medium">
+                        Minta pelanggan memindai QRIS toko. Setelah pembayaran diverifikasi sukses, simpan transaksi ini.
+                      </p>
+                      <div>
+                        <label className="block text-[11px] font-bold text-amber-200 mb-1">Catatan / Ref QRIS (Opsional)</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: Ref #123456 / BCA QRIS / Mandiri Livin"
+                          value={paymentNotes}
+                          onChange={e => setPaymentNotes(e.target.value)}
+                          className="w-full px-3 py-2 bg-white text-slate-950 rounded-lg text-xs font-bold border border-purple-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-sm sm:text-base font-black text-amber-300">Uang Diterima dari Pelanggan (Rp)</label>
+                          <button
+                            type="button"
+                            onClick={() => setNumpadOpen(true)}
+                            className="text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-3 py-1 rounded-lg border-2 border-amber-300 flex items-center gap-1 shadow-xs transition cursor-pointer"
+                          >
+                            Keypad
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-3 text-slate-950 font-black text-base">Rp</span>
+                          <input
+                            type="number"
+                            placeholder="0"
+                            value={paidAmount}
+                            onChange={e => setPaidAmount(e.target.value)}
+                            className="w-full pl-11 pr-4 py-2.5 bg-white border-4 border-amber-400 rounded-xl text-slate-950 font-black focus:outline-none focus:ring-4 focus:ring-amber-400/50 transition text-xl shadow-inner"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Quick cash suggestions */}
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+                        {quickCashOptions.map(amt => (
+                          <button
+                            key={amt}
+                            onClick={() => setPaidAmount(String(amt))}
+                            style={{ backgroundColor: '#581c87', borderColor: '#7e22ce' }}
+                            className="hover:bg-amber-400 hover:text-slate-950 text-white text-xs py-1.5 rounded-lg border-2 font-black transition cursor-pointer"
+                          >
+                            {amt >= 1000 ? `${amt / 1000}rb` : amt}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setPaidAmount(String(totalAmount))}
+                          className="bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs py-1.5 rounded-lg border-2 border-amber-300 font-black transition col-span-3 sm:col-span-2 cursor-pointer"
+                        >
+                          Uang Pas
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-amber-200 mb-1">Catatan Transaksi Tunai (Opsional)</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: Uang pas / Titip kembalian"
+                          value={paymentNotes}
+                          onChange={e => setPaymentNotes(e.target.value)}
+                          className="w-full px-3 py-1.5 bg-white text-slate-950 rounded-lg text-xs font-bold border border-purple-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                      </div>
+                    </>
+                  )}
 
                   {/* Change Result - Ultra High Contrast Bright Yellow Text (No Black Font) */}
                   <div className={`p-3.5 rounded-xl border-4 flex items-center justify-between shadow-xl ${

@@ -35,6 +35,8 @@ interface Transaction {
   paid_amount: number;
   change_amount: number;
   cashier_name: string;
+  payment_method?: string;
+  notes?: string;
   created_at: string;
   items: TransactionItem[];
 }
@@ -381,7 +383,7 @@ async function startServer() {
 
   app.post('/api/transactions', (req, res) => {
     const db = loadDb();
-    const { invoice_no, subtotal_amount, discount_amount, tax_amount, total_amount, paid_amount, change_amount, cashier_name, items } = req.body;
+    const { invoice_no, subtotal_amount, discount_amount, tax_amount, total_amount, paid_amount, change_amount, cashier_name, payment_method, notes, items } = req.body;
 
     if (!invoice_no || total_amount === undefined || paid_amount === undefined || !items || !items.length) {
       return res.status(400).json({ error: 'Data transaksi tidak lengkap' });
@@ -397,6 +399,8 @@ async function startServer() {
       paid_amount: Number(paid_amount),
       change_amount: Number(change_amount),
       cashier_name: cashier_name || 'Kasir 1',
+      payment_method: payment_method || 'TUNAI',
+      notes: notes || '',
       created_at: new Date().toISOString(),
       items
     };
