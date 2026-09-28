@@ -162,8 +162,12 @@ export default function App() {
   const [thermalPaperWidth, setThermalPaperWidth] = useState<'58mm' | '80mm'>(() => {
     return (localStorage.getItem('tokobazar_thermal_paper_width') as '58mm' | '80mm') || '58mm';
   });
+  const DEFAULT_BANK_CHIPS = 'Transfer BCA, Transfer BRI, Transfer Mandiri, QRIS GoPay, QRIS ShopeePay, QRIS DANA';
   const [showBankQuickChips, setShowBankQuickChips] = useState<boolean>(() => {
     return localStorage.getItem('tokobazar_show_quick_chips') !== 'false';
+  });
+  const [bankQuickChipsList, setBankQuickChipsList] = useState<string>(() => {
+    return localStorage.getItem('tokobazar_bank_chips_list') || DEFAULT_BANK_CHIPS;
   });
   const [mobileMarginMode, setMobileMarginMode] = useState<'default' | 'max_width'>(() => {
     return (localStorage.getItem('tokobazar_mobile_margin_mode') as 'default' | 'max_width') || 'default';
@@ -3775,22 +3779,26 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                           onChange={e => setPaymentNotes(e.target.value)}
                           className="w-full px-3 py-2 bg-white text-slate-950 rounded-lg text-xs font-bold border-2 border-sky-300 focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-slate-400"
                         />
-                        {/* Quick Chips for Bank & E-Wallet Notes (Toggled via Admin Setting) */}
-                        {showBankQuickChips && (
+                        {/* Quick Chips for Bank & E-Wallet Notes (Customized via Admin Setting) */}
+                        {showBankQuickChips && bankQuickChipsList.trim() && (
                           <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                            {['Transfer BCA', 'Transfer BRI', 'Transfer Mandiri', 'QRIS GoPay', 'QRIS ShopeePay'].map(chip => (
-                              <button
-                                key={chip}
-                                type="button"
-                                onClick={() => {
-                                  if (!paymentNotes) setPaymentNotes(chip);
-                                  else if (!paymentNotes.includes(chip)) setPaymentNotes(`${chip} - ${paymentNotes}`);
-                                }}
-                                className="text-[10px] bg-slate-800 hover:bg-slate-700 text-sky-200 px-2 py-0.5 rounded border border-slate-700 transition cursor-pointer"
-                              >
-                                + {chip}
-                              </button>
-                            ))}
+                            {bankQuickChipsList
+                              .split(',')
+                              .map(s => s.trim())
+                              .filter(Boolean)
+                              .map((chip, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!paymentNotes) setPaymentNotes(chip);
+                                    else if (!paymentNotes.includes(chip)) setPaymentNotes(`${chip} - ${paymentNotes}`);
+                                  }}
+                                  className="text-[10px] bg-slate-800 hover:bg-slate-700 text-sky-200 px-2 py-0.5 rounded border border-slate-700 transition cursor-pointer"
+                                >
+                                  + {chip}
+                                </button>
+                              ))}
                           </div>
                         )}
                       </div>
@@ -5968,7 +5976,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               </div>
             </div>
 
-            {/* 6. Pengaturan Tombol Pintas Catatan Bank & E-Wallet */}
+            {/* 6. Pengaturan Tombol Pintas Catatan Bank & E-Wallet (Kustomisasi Teks Comma-Separated) */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
               <div className="border-b border-slate-100 pb-3">
                 <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -5976,11 +5984,11 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   <span>Tombol Pintas Catatan Bank & E-Wallet (QRIS / Transfer)</span>
                 </h3>
                 <p className="text-xs text-slate-600 mt-1">
-                  Atur keberadaan tombol pintas (+ Transfer BCA, + Transfer BRI, + Transfer Mandiri, + QRIS GoPay, + QRIS ShopeePay) di panel pembayaran POS.
+                  Atur keberadaan dan kustomisasi teks tombol pintas bank/e-wallet untuk memudahkan catatan transaksi kasir.
                 </p>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <label className="flex items-start gap-3 p-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl cursor-pointer hover:border-slate-300 transition select-none">
                   <input
                     type="checkbox"
@@ -5997,10 +6005,64 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       Tampilkan Tombol Cepat Bank & E-Wallet di Panel Kasir POS
                     </span>
                     <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-                      Memudahkan kasir menempelkan teks "+ Transfer BCA", "+ Transfer BRI", "+ Transfer Mandiri", "+ QRIS GoPay", dll ke catatan transaksi hanya dengan 1 kali ketuk.
+                      Memudahkan kasir menempelkan nama bank / QRIS ke catatan transaksi hanya dengan 1 kali ketuk.
                     </p>
                   </div>
                 </label>
+
+                {showBankQuickChips && (
+                  <div className="bg-slate-50 border-2 border-indigo-200 rounded-2xl p-4 space-y-3 shadow-xs">
+                    <div>
+                      <label className="block text-xs font-bold text-indigo-950 uppercase mb-1">
+                        Daftar Tombol Pintas Custom (Pisahkan Dengan Tanda Koma):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: QRIS DANA, QRIS ShopeePay, Transfer Bank BRI"
+                        value={bankQuickChipsList}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setBankQuickChipsList(val);
+                          localStorage.setItem('tokobazar_bank_chips_list', val);
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-white border-2 border-indigo-400 rounded-xl text-slate-900 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                      <p className="text-[11px] text-slate-600 font-medium max-w-md">
+                        💡 Admin bebas menuliskan nama-nama bank atau QRIS dipisahkan koma. Tombol di layar kasir akan otomatis terbentuk sesuai daftar di atas.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBankQuickChipsList(DEFAULT_BANK_CHIPS);
+                          localStorage.setItem('tokobazar_bank_chips_list', DEFAULT_BANK_CHIPS);
+                          showAlert('Daftar tombol pintas dikembalikan ke standar awal', 'info');
+                        }}
+                        className="text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-950 font-bold px-3 py-1.5 rounded-lg border border-indigo-300 transition cursor-pointer"
+                      >
+                        Reset Standar
+                      </button>
+                    </div>
+
+                    {/* Live Preview Chips */}
+                    <div className="pt-2 border-t border-slate-200">
+                      <span className="text-[10px] font-bold text-slate-500 block mb-1">Preview Tombol di Layar Kasir:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {bankQuickChipsList
+                          .split(',')
+                          .map(s => s.trim())
+                          .filter(Boolean)
+                          .map((chip, idx) => (
+                            <span key={idx} className="text-[11px] bg-slate-800 text-sky-200 px-2.5 py-1 rounded-md border border-slate-700 font-mono font-bold shadow-2xs">
+                              + {chip}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
