@@ -39,13 +39,27 @@ interface Transaction {
   items: TransactionItem[];
 }
 
+interface User {
+  id: number;
+  username: string;
+  password: string;
+  name: string;
+  role: 'KASIR' | 'ADMIN';
+  created_at?: string;
+}
+
 interface DatabaseData {
+  users: User[];
   products: Product[];
   transactions: Transaction[];
 }
 
 function getInitialData(): DatabaseData {
   return {
+    users: [
+      { id: 1, username: 'kasir', password: 'kasir1234', name: 'Kasir Utama', role: 'KASIR' },
+      { id: 2, username: 'admin', password: 'admin1234', name: 'Administrator', role: 'ADMIN' }
+    ],
     products: [
       { id: 1, barcode: '8996001321045', name: 'Indomie Goreng Special 85g', price: 3500 },
       { id: 2, barcode: '8996001321052', name: 'Indomie Kuah Ayam Bawang', price: 3200 },
@@ -236,23 +250,96 @@ async function startServer() {
     res.json({ success: true, countAdded, countUpdated });
   });
 
+  // Auth & User Management Endpoints
+  app.post('/api/auth', (req, res) => {
+    const db = loadDb();
+    if (!db.users || db.users.length === 0) {
+      db.users = getInitialData().users;
+      saveDb(db);
+    }
+    const action = req.query.action || 'login';
+
+    if (action === 'login') {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: 'Username dan Password wajib diisi' });
+      }
+      const user = db.users.find(u => u.username.toLowerCase() === String(username).trim().toLowerCase());
+      if (!user || user.password !== password) {
+        return res.status(401).json({ error: 'Username atau Password salah!' });
+      }
+      return res.json({
+        success: true,
+        user: { id: user.id, username: user.username, name: user.name, role: user.role }
+      });
+    }
+
+    if (action === 'create_user') {
+      const { username, password, name, role } = req.body;
+      if (!username || !password || !name) {
+        return res.status(400).json({ error: 'Username, Password, dan Nama wajib diisi' });
+      }
+      if (db.users.some(u => u.username.toLowerCase() === String(username).trim().toLowerCase())) {
+        return res.status(400).json({ error: 'Username tersebut sudah terpakai!' });
+      }
+      const newId = db.users.length > 0 ? Math.max(...db.users.map(u => u.id)) + 1 : 1;
+      const userRole = role === 'ADMIN' ? 'ADMIN' : 'KASIR';
+      db.users.push({ id: newId, username: String(username).trim().toLowerCase(), password, name: String(name).trim(), role: userRole });
+      saveDb(db);
+      return res.json({ success: true, message: 'User baru berhasil ditambahkan!' });
+    }
+
+    if (action === 'update_user') {
+      const { id, password, name, role } = req.body;
+      const idx = db.users.findIndex(u => u.id === Number(id));
+      if (idx === -1) {
+        return res.status(404).json({ error: 'User tidak ditemukan' });
+      }
+      if (name) db.users[idx].name = name;
+      if (role) db.users[idx].role = role === 'ADMIN' ? 'ADMIN' : 'KASIR';
+      if (password && password.trim() !== '') db.users[idx].password = password;
+      saveDb(db);
+      return res.json({ success: true, message: 'Data user berhasil diperbarui!' });
+    }
+
+    res.status(400).json({ error: 'Aksi tidak dikenal' });
+  });
+
+  app.get('/api/auth', (req, res) => {
+    const db = loadDb();
+    if (!db.users || db.users.length === 0) {
+      db.users = getInitialData().users;
+      saveDb(db);
+    }
+    res.json(db.users);
+  });
+
+  app.delete('/api/auth', (req, res) => {
+    const db = loadDb();
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ error: 'ID user wajib diisi' });
+    db.users = db.users.filter(u => u.id !== Number(id));
+    saveDb(db);
+    res.json({ success: true });
+  });
+
   // Bootstrap API (ensures database structure and initial seed items)
   app.post('/api/bootstrap', (_req, res) => {
     const db = loadDb();
-    if (db.products.length === 0) {
-      const initial = getInitialData();
-      db.products = initial.products;
-      saveDb(db);
-      return res.json({
-        success: true,
-        message: 'Database lokal berhasil di-bootstrap dengan data sampel awal!',
-        seeded: true
-      });
+    let seeded = false;
+    if (!db.users || db.users.length === 0) {
+      db.users = getInitialData().users;
+      seeded = true;
     }
+    if (db.products.length === 0) {
+      db.products = getInitialData().products;
+      seeded = true;
+    }
+    saveDb(db);
     res.json({
       success: true,
-      message: 'Database lokal sudah siap dan memiliki data.',
-      seeded: false
+      message: 'Database berhasil di-bootstrap dengan tabel user & produk!',
+      seeded
     });
   });
 
