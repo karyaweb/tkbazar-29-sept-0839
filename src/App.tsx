@@ -24,6 +24,8 @@ import {
   ChevronRight,
   ShieldCheck,
   Server,
+  Database,
+  Zap,
   Download,
   Upload,
   Share2,
@@ -155,6 +157,7 @@ export default function App() {
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [productModalOpen, setProductModalOpen] = useState<boolean>(false);
   const [isModalScanning, setIsModalScanning] = useState<boolean>(false);
+  const [productSearch, setProductSearch] = useState<string>('');
 
   // Virtual Numpad State
   const [numpadOpen, setNumpadOpen] = useState<boolean>(false);
@@ -270,6 +273,29 @@ export default function App() {
       window.removeEventListener('online', syncPendingTransactions);
     };
   }, []);
+
+  // D1 Bootstrap State
+  const [bootstrappingD1, setBootstrappingD1] = useState<boolean>(false);
+  const [bootstrapMessage, setBootstrapMessage] = useState<string | null>(null);
+
+  const handleBootstrapD1 = async () => {
+    setBootstrappingD1(true);
+    setBootstrapMessage(null);
+    try {
+      const res = await fetch('/api/bootstrap', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setBootstrapMessage(data.message || 'Database Cloudflare D1 berhasil di-bootstrap!');
+        fetchProducts();
+      } else {
+        setBootstrapMessage(`Gagal: ${data.error || 'Terjadi kesalahan saat bootstrap D1'}`);
+      }
+    } catch (err: any) {
+      setBootstrapMessage(`Error koneksi: ${err.message || 'Jaringan bermasalah'}`);
+    } finally {
+      setBootstrappingD1(false);
+    }
+  };
 
   // Fetch Products
   const fetchProducts = async () => {
@@ -1383,8 +1409,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       <Cloud className="w-5 h-5 text-cyan-400" />
                     </div>
                     <div>
-                      <div className="font-bold text-base">? (Bantuan & D1)</div>
-                      <div className="text-xs text-slate-400">Panduan offline & sinkronisasi database</div>
+                      <div className="font-bold text-base">? (Petunjuk PWA & Bantuan)</div>
+                      <div className="text-xs text-slate-400">Petunjuk install PWA HP/PC, offline & D1</div>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-slate-400" />
@@ -2310,52 +2336,168 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               </div>
             </div>
 
+            {/* Filter / Search Bar (Ketik Huruf) */}
+            <div className="bg-pink-100 border-2 border-pink-400 rounded-2xl p-4 mb-5 space-y-2 shadow-xs">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black uppercase text-pink-950 flex items-center gap-1.5">
+                  <Search className="w-4 h-4 text-pink-700" />
+                  <span>Saring & Filter Barang (Ketik Nama / Barcode):</span>
+                </label>
+                {productSearch && (
+                  <button
+                    onClick={() => setProductSearch('')}
+                    className="text-xs font-black text-rose-700 hover:underline"
+                  >
+                    Reset Filter
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-700 font-bold" />
+                <input
+                  type="text"
+                  placeholder="Ketik huruf nama barang atau angka barcode untuk menyaring..."
+                  value={productSearch}
+                  onChange={e => setProductSearch(e.target.value)}
+                  className="w-full pl-11 pr-10 py-3 bg-white border-2 border-pink-500 rounded-xl text-slate-950 font-black text-base placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-500/30"
+                />
+                {productSearch && (
+                  <button
+                    onClick={() => setProductSearch('')}
+                    className="absolute right-3.5 top-3.5 text-slate-600 hover:text-slate-950 font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <p className="text-xs font-bold text-slate-800 pt-0.5">
+                {productSearch.trim() ? (
+                  <span>
+                    Menampilkan <strong>{products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.barcode.toLowerCase().includes(productSearch.toLowerCase())).length}</strong> produk hasil saringan dari total {products.length} barang.
+                  </span>
+                ) : (
+                  <span>
+                    Menampilkan seluruh <strong>{products.length}</strong> produk. Ketik huruf nama barang di atas untuk menyaring.
+                  </span>
+                )}
+              </p>
+            </div>
+
             {loading ? (
               <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center space-y-2">
                 <RefreshCw className="w-6 h-6 animate-spin text-rose-600" />
                 <p className="text-sm">Memuat data produk...</p>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                      <th className="py-3 px-4">#ID</th>
-                      <th className="py-3 px-4">Barcode / QR</th>
-                      <th className="py-3 px-4">Nama Barang</th>
-                      <th className="py-3 px-4">Harga (IDR)</th>
-                      <th className="py-3 px-4 text-right">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm">
-                    {products.map(p => (
-                      <tr key={p.id} className="hover:bg-slate-50/80 transition">
-                        <td className="py-3.5 px-4 font-mono text-slate-500">{p.id}</td>
-                        <td className="py-3.5 px-4 font-mono font-medium text-slate-700">{p.barcode}</td>
-                        <td className="py-3.5 px-4 font-medium text-slate-900">{p.name}</td>
-                        <td className="py-3.5 px-4 font-bold text-rose-600">{formatRupiah(p.price)}</td>
-                        <td className="py-3.5 px-4 text-right space-x-2">
+            ) : (() => {
+              const displayProducts = products.filter(p =>
+                p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+                p.barcode.toLowerCase().includes(productSearch.toLowerCase())
+              );
+
+              if (displayProducts.length === 0) {
+                return (
+                  <div className="py-12 text-center text-slate-500 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 p-6">
+                    <Package className="w-12 h-12 text-slate-300 mx-auto mb-2" />
+                    <p className="font-bold text-slate-800 text-base">Tidak ada produk yang cocok dengan pencarian "{productSearch}"</p>
+                    <p className="text-xs text-slate-500 mt-1">Coba ketik kata kunci huruf lain atau tekan tombol Reset Filter di atas.</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-4">
+                  {/* Smartphone Layout (Vertical Cards - No Horizontal Scroll) */}
+                  <div className="block md:hidden space-y-3">
+                    {displayProducts.map(p => (
+                      <div key={p.id} className="bg-white border-2 border-slate-300 rounded-2xl p-3.5 shadow-xs flex flex-col space-y-2.5">
+                        {/* Line 1: Nama Barang */}
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase block">Baris 1: Nama Barang</span>
+                          <h3 className="font-black text-slate-950 text-base sm:text-lg leading-snug break-words">
+                            {p.name}
+                          </h3>
+                        </div>
+
+                        {/* Line 2: Barcode */}
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5">Baris 2: Barcode</span>
+                          <span className="font-mono text-xs font-black text-slate-900 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-300 inline-block">
+                            {p.barcode}
+                          </span>
+                        </div>
+
+                        {/* Line 3: Harga */}
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5">Baris 3: Harga Jual</span>
+                          <span className="text-lg font-black text-rose-700 font-mono">
+                            {formatRupiah(p.price)}
+                          </span>
+                        </div>
+
+                        {/* Line 4: Tombol Edit & Hapus */}
+                        <div className="pt-2 border-t border-slate-200 flex items-center gap-2">
                           <button
                             onClick={() => openEditProduct(p)}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 rounded-lg transition inline-flex items-center"
-                            title="Edit"
+                            className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-300 transition"
                           >
-                            <Edit className="w-4 h-4" />
+                            <Edit className="w-4 h-4 text-slate-700" />
+                            <span>Edit Barang</span>
                           </button>
                           <button
                             onClick={() => handleDeleteProduct(p.id)}
-                            className="bg-red-50 hover:bg-red-100 text-red-600 p-2 rounded-lg transition inline-flex items-center"
-                            title="Hapus"
+                            className="bg-red-50 hover:bg-red-100 text-red-700 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border border-red-200 transition"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                            <span>Hapus</span>
                           </button>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                  </div>
+
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          <th className="py-3 px-4">#ID</th>
+                          <th className="py-3 px-4">Barcode / QR</th>
+                          <th className="py-3 px-4">Nama Barang</th>
+                          <th className="py-3 px-4">Harga (IDR)</th>
+                          <th className="py-3 px-4 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-sm">
+                        {displayProducts.map(p => (
+                          <tr key={p.id} className="hover:bg-slate-50/80 transition">
+                            <td className="py-3.5 px-4 font-mono text-slate-500">{p.id}</td>
+                            <td className="py-3.5 px-4 font-mono font-bold text-slate-800">{p.barcode}</td>
+                            <td className="py-3.5 px-4 font-black text-slate-950">{p.name}</td>
+                            <td className="py-3.5 px-4 font-black text-rose-700 font-mono">{formatRupiah(p.price)}</td>
+                            <td className="py-3.5 px-4 text-right space-x-2">
+                              <button
+                                onClick={() => openEditProduct(p)}
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-800 p-2 rounded-lg transition inline-flex items-center border border-slate-300"
+                                title="Edit"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProduct(p.id)}
+                                className="bg-red-50 hover:bg-red-100 text-red-600 p-2 rounded-lg transition inline-flex items-center border border-red-200"
+                                title="Hapus"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -2800,9 +2942,113 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
           </div>
         )}
 
-        {/* TAB 4: CLOUDFLARE DEPLOYMENT GUIDE */}
+        {/* TAB 4: CLOUDFLARE DEPLOYMENT GUIDE & PWA HELP */}
         {activeTab === 'cloudflare' && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 space-y-6">
+            {/* PWA INSTALLATION & GUIDE BANNER */}
+            <div className="bg-gradient-to-r from-rose-700 via-rose-800 to-slate-900 rounded-2xl shadow-lg p-6 text-white space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-rose-500/40 pb-4">
+                <div>
+                  <div className="inline-flex items-center space-x-1.5 bg-rose-500/30 border border-rose-400/40 px-3 py-1 rounded-full text-xs font-bold mb-2 text-rose-200">
+                    <Smartphone className="w-3.5 h-3.5 text-rose-300" />
+                    <span>Aplikasi Kasir Siap Offline (PWA)</span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black tracking-tight">Opsi & Petunjuk Cara Install PWA TokoBazar</h2>
+                  <p className="text-xs sm:text-sm text-rose-100 mt-1 max-w-xl">
+                    Install TokoBazar di HP Android, iPhone, atau Komputer untuk membukanya secara langsung dari Layar Utama tanpa perlu mengetikkan URL web.
+                  </p>
+                </div>
+                <div className="shrink-0">
+                  <PWAInstallButton className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-3 text-sm rounded-xl shadow-lg transition border-2 border-amber-300" />
+                </div>
+              </div>
+
+              {/* Step-by-Step Instructions */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                <div className="bg-slate-900/80 border border-slate-700 p-4 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                    <Smartphone className="w-4 h-4" />
+                    <span>📱 HP Android (Google Chrome)</span>
+                  </div>
+                  <ol className="text-xs text-slate-200 space-y-1.5 list-decimal pl-4 leading-relaxed font-medium">
+                    <li>Buka browser Google Chrome di HP Anda.</li>
+                    <li>Ketuk ikon <strong>titik tiga (⋮)</strong> di pojok kanan atas.</li>
+                    <li>Pilih menu <strong>"Tambahkan ke Layar Utama"</strong> atau <strong>"Install Aplikasi"</strong>.</li>
+                    <li>Ketuk <strong>"Install"</strong>. Ikon TokoBazar akan muncul di layar HP Anda.</li>
+                  </ol>
+                </div>
+
+                <div className="bg-slate-900/80 border border-slate-700 p-4 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                    <Smartphone className="w-4 h-4" />
+                    <span>🍎 iPhone / iPad (Safari)</span>
+                  </div>
+                  <ol className="text-xs text-slate-200 space-y-1.5 list-decimal pl-4 leading-relaxed font-medium">
+                    <li>Buka aplikasi Safari di iPhone / iPad Anda.</li>
+                    <li>Ketuk tombol <strong>Bagikan (Share)</strong> di bagian bawah layar.</li>
+                    <li>Geser ke bawah dan pilih <strong>"Tambah ke Layar Utama" (Add to Home Screen)</strong>.</li>
+                    <li>Ketuk <strong>"Tambah"</strong> di pojok kanan atas.</li>
+                  </ol>
+                </div>
+
+                <div className="bg-slate-900/80 border border-slate-700 p-4 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                    <BookOpen className="w-4 h-4" />
+                    <span>💻 Laptop / PC (Chrome / Edge)</span>
+                  </div>
+                  <ol className="text-xs text-slate-200 space-y-1.5 list-decimal pl-4 leading-relaxed font-medium">
+                    <li>Tekan tombol kuning <strong>"Install Aplikasi Kasir (PWA)"</strong> di atas.</li>
+                    <li>Atau klik ikon <strong>Install ⊕</strong> yang muncul di kanan bilah alamat (URL).</li>
+                    <li>Klik <strong>"Install"</strong> untuk menjadikan aplikasi desktop resmi.</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            {/* Automatic D1 Database Bootstrap Card */}
+            <div className="bg-emerald-950 border-3 border-emerald-500 rounded-2xl p-5 text-white space-y-3 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="inline-flex items-center space-x-1.5 bg-emerald-800 text-emerald-200 px-3 py-1 rounded-full text-xs font-black mb-1.5">
+                    <Database className="w-3.5 h-3.5" />
+                    <span>Fitur Bootstrap D1 Otomatis (1 Klik)</span>
+                  </div>
+                  <h3 className="text-lg font-black text-amber-300">
+                    ⚡ Inisialisasi / Bootstrap Tabel D1 Otomatis
+                  </h3>
+                  <p className="text-xs text-slate-200 mt-1 max-w-xl">
+                    Jika database Cloudflare D1 Anda masih kosong atau belum memiliki tabel <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">products</code>, <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">transactions</code>, dan <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">transaction_items</code>, klik tombol ini untuk membuat seluruh struktur tabel dan mengisinya dengan produk sampel awal.
+                  </p>
+                </div>
+                <button
+                  onClick={handleBootstrapD1}
+                  disabled={bootstrappingD1}
+                  className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-3 text-sm rounded-xl shadow-lg transition border-2 border-amber-300 shrink-0 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {bootstrappingD1 ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>Membuat Tabel D1...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 text-slate-950 fill-slate-950" />
+                      <span>⚡ Bootstrap Database D1 Sekarang</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              {bootstrapMessage && (
+                <div className={`p-3 rounded-xl border text-xs font-black ${
+                  bootstrapMessage.startsWith('Error') || bootstrapMessage.startsWith('Gagal')
+                    ? 'bg-red-900/80 border-red-500 text-red-200'
+                    : 'bg-emerald-900/80 border-emerald-400 text-emerald-200'
+                }`}>
+                  {bootstrapMessage}
+                </div>
+              )}
+            </div>
+
             <div>
               <div className="flex items-center space-x-3 mb-2">
                 <div className="bg-amber-500 p-2.5 rounded-xl text-white">
