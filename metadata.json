@@ -1,0 +1,8 @@
+{
+  "name": "TokoBazar - POS Kasir & Kalkulator Belanja",
+  "description": "Aplikasi web kasir & kalkulator belanja toko modern dengan pemindai barcode, manajemen produk, keranjang, kalkulator kembalian, dan siap deploy ke Cloudflare Pages & D1",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
