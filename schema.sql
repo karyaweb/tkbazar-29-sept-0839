@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     subtotal_amount REAL,
     discount_amount REAL,
     tax_amount REAL,
+    admin_fee_amount REAL DEFAULT 0,
     total_amount REAL NOT NULL,
     paid_amount REAL NOT NULL,
     change_amount REAL NOT NULL,
@@ -43,6 +44,15 @@ CREATE TABLE IF NOT EXISTS transaction_items (
     FOREIGN KEY (invoice_no) REFERENCES transactions(invoice_no)
 );
 
+CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cashier_name TEXT NOT NULL,
+    category TEXT NOT NULL, -- 'Uang Sampah', 'Listrik / Air', 'Makan & Minum', 'Donasi', 'Prive Tunai', 'Operasional Toko', 'Lainnya'
+    amount REAL NOT NULL,
+    notes TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Seed Data User Default
 INSERT OR IGNORE INTO users (id, username, password, name, role) VALUES 
 (1, 'kasir', 'kasir1234', 'Kasir Utama', 'KASIR'),
@@ -60,3 +70,7 @@ INSERT OR IGNORE INTO products (barcode, name, price) VALUES
 ('8991112223344', 'Telur Ayam Negeri 1 Kg', 28000),
 ('8993334445566', 'Teh Botol Sosro 450ml', 4500),
 ('8997778889900', 'Chitato Snack Sapi Panggang 68g', 10500);
+
+-- Perintah Migrasi Kolom untuk Database Cloudflare D1 yang Sudah Berjalan Sebelumnya:
+-- ALTER TABLE transactions ADD COLUMN payment_method TEXT DEFAULT 'TUNAI';
+-- ALTER TABLE transactions ADD COLUMN notes TEXT DEFAULT '';

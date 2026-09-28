@@ -31,6 +31,7 @@ interface Transaction {
   subtotal_amount?: number;
   discount_amount?: number;
   tax_amount?: number;
+  admin_fee_amount?: number;
   total_amount: number;
   paid_amount: number;
   change_amount: number;
@@ -39,6 +40,15 @@ interface Transaction {
   notes?: string;
   created_at: string;
   items: TransactionItem[];
+}
+
+interface Expense {
+  id: number;
+  cashier_name: string;
+  category: string;
+  amount: number;
+  notes?: string;
+  created_at: string;
 }
 
 interface User {
@@ -54,6 +64,7 @@ interface DatabaseData {
   users: User[];
   products: Product[];
   transactions: Transaction[];
+  expenses: Expense[];
 }
 
 function getInitialData(): DatabaseData {
@@ -74,7 +85,8 @@ function getInitialData(): DatabaseData {
       { id: 9, barcode: '8993334445566', name: 'Teh Botol Sosro 450ml', price: 4500 },
       { id: 10, barcode: '8997778889900', name: 'Chitato Snack Sapi Panggang 68g', price: 10500 }
     ],
-    transactions: []
+    transactions: [],
+    expenses: []
   };
 }
 
@@ -86,7 +98,12 @@ function loadDb(): DatabaseData {
     }
     if (fs.existsSync(DB_FILE)) {
       const content = fs.readFileSync(DB_FILE, 'utf-8');
-      return JSON.parse(content);
+      const data = JSON.parse(content);
+      if (!data.expenses) data.expenses = [];
+      if (!data.transactions) data.transactions = [];
+      if (!data.users) data.users = [];
+      if (!data.products) data.products = [];
+      return data;
     }
   } catch (e) {
     console.error('Error loading DB:', e);
@@ -354,7 +371,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // Bootstrap API (ensures database structure and initial seed items)
+  // Bootstrap API (ensures database structure, QRIS fields, and initial seed items)
   app.post('/api/bootstrap', (_req, res) => {
     const db = loadDb();
     let seeded = false;
@@ -366,10 +383,27 @@ async function startServer() {
       db.products = getInitialData().products;
       seeded = true;
     }
+    if (db.transactions) {
+      db.transactions.forEach(tx => {
+        if (!tx.payment_method) {
+          tx.payment_method = 'TUNAI';
+        }
+        if (tx.notes === undefined) {
+          tx.notes = '';
+        }
+        if (tx.admin_fee_amount === undefined) {
+          tx.admin_fee_amount = 0;
+        }
+      });
+    }
+    if (!db.expenses) {
+      db.expenses = [];
+      seeded = true;
+    }
     saveDb(db);
     res.json({
       success: true,
-      message: 'Database berhasil di-bootstrap dengan tabel user & produk!',
+      message: 'Database berhasil di-bootstrap dengan tabel user, produk, expenses (pengeluaran), serta kolom QRIS & Catatan!',
       seeded
     });
   });
@@ -383,7 +417,20 @@ async function startServer() {
 
   app.post('/api/transactions', (req, res) => {
     const db = loadDb();
-    const { invoice_no, subtotal_amount, discount_amount, tax_amount, total_amount, paid_amount, change_amount, cashier_name, payment_method, notes, items } = req.body;
+    const {
+      invoice_no,
+      subtotal_amount,
+      discount_amount,
+      tax_amount,
+      admin_fee_amount,
+      total_amount,
+      paid_amount,
+      change_amount,
+      cashier_name,
+      payment_method,
+      notes,
+      items
+    } = req.body;
 
     if (!invoice_no || total_amount === undefined || paid_amount === undefined || !items || !items.length) {
       return res.status(400).json({ error: 'Data transaksi tidak lengkap' });
@@ -395,6 +442,7 @@ async function startServer() {
       subtotal_amount: subtotal_amount !== undefined ? Number(subtotal_amount) : undefined,
       discount_amount: discount_amount !== undefined ? Number(discount_amount) : undefined,
       tax_amount: tax_amount !== undefined ? Number(tax_amount) : undefined,
+      admin_fee_amount: admin_fee_amount !== undefined ? Number(admin_fee_amount) : 0,
       total_amount: Number(total_amount),
       paid_amount: Number(paid_amount),
       change_amount: Number(change_amount),
@@ -409,6 +457,53 @@ async function startServer() {
     saveDb(db);
 
     res.json({ success: true, transaction: newTx });
+  });
+
+  // Expenses API (Pengeluaran Kas Toko: Sampah, Listrik, Makan/Minum, Donasi, Prive, dll)
+  app.get('/api/expenses', (req, res) => {
+    const db = loadDb();
+    const sorted = [...(db.expenses || [])].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    res.json(sorted);
+  });
+
+  app.post('/api/expenses', (req, res) => {
+    const db = loadDb();
+    const { cashier_name, category, amount, notes } = req.body;
+
+    if (!category || amount === undefined || Number(amount) <= 0) {
+      return res.status(400).json({ error: 'Kategori dan nominal pengeluaran wajib diisi valid' });
+    }
+
+    const newId = db.expenses && db.expenses.length > 0 ? Math.max(...db.expenses.map(e => e.id)) + 1 : 1;
+    const newExpense: Expense = {
+      id: newId,
+      cashier_name: cashier_name || 'Kasir Utama',
+      category: String(category).trim(),
+      amount: Number(amount),
+      notes: notes ? String(notes).trim() : '',
+      created_at: new Date().toISOString()
+    };
+
+    if (!db.expenses) db.expenses = [];
+    db.expenses.push(newExpense);
+    saveDb(db);
+
+    res.json({ success: true, expense: newExpense });
+  });
+
+  app.delete('/api/expenses', (req, res) => {
+    const db = loadDb();
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ error: 'ID pengeluaran wajib disertakan' });
+
+    const index = (db.expenses || []).findIndex(e => e.id === Number(id));
+    if (index === -1) {
+      return res.status(404).json({ error: 'Data pengeluaran tidak ditemukan' });
+    }
+
+    db.expenses.splice(index, 1);
+    saveDb(db);
+    res.json({ success: true });
   });
 
   // Serve frontend: Vite dev server in development, static files in production

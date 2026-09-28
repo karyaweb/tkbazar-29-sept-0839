@@ -48,6 +48,7 @@ export async function onRequestPost(context) {
           cashier_name TEXT DEFAULT 'Kasir 1',
           payment_method TEXT DEFAULT 'TUNAI',
           notes TEXT DEFAULT '',
+          admin_fee_amount REAL DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
       `),
@@ -62,6 +63,16 @@ export async function onRequestPost(context) {
           subtotal REAL NOT NULL,
           FOREIGN KEY (invoice_no) REFERENCES transactions(invoice_no)
         );
+      `),
+      db.prepare(`
+        CREATE TABLE IF NOT EXISTS expenses (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cashier_name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          amount REAL NOT NULL,
+          notes TEXT DEFAULT '',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
       `)
     ]);
 
@@ -75,6 +86,11 @@ export async function onRequestPost(context) {
       await db.prepare("ALTER TABLE transactions ADD COLUMN notes TEXT DEFAULT ''").run();
     } catch (e) {
       // Column notes may already exist
+    }
+    try {
+      await db.prepare("ALTER TABLE transactions ADD COLUMN admin_fee_amount REAL DEFAULT 0").run();
+    } catch (e) {
+      // Column admin_fee_amount may already exist
     }
 
     // 2. Check & Seed Users
