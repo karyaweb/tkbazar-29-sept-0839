@@ -265,13 +265,20 @@ async function startServer() {
     res.json({ success: true, transaction: newTx });
   });
 
-  // Vite dev server middleware
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: 'spa',
-  });
-
-  app.use(vite.middlewares);
+  // Serve frontend: Vite dev server in development, static files in production
+  if (process.env.NODE_ENV === 'production') {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  } else {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  }
 
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   app.listen(port, '0.0.0.0', () => {

@@ -99,6 +99,21 @@ export default function App() {
   const [discountValue, setDiscountValue] = useState<string>('');
   const [menuDropdownOpen, setMenuDropdownOpen] = useState<boolean>(false);
 
+  // In-app Alert / Toast & Confirm Dialog (avoids window.alert / window.confirm in iframe)
+  const [toast, setToast] = useState<{ message: string; type: 'info' | 'error' | 'success' } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
+  const showAlert = (message: string, type: 'info' | 'error' | 'success' = 'info') => {
+    setToast({ message, type });
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
   // Report Filter States
   const [reportPeriod, setReportPeriod] = useState<string>('30'); // '7', '15', '30', '60', '90', or 'month_0'..'month_11'
   const [selectedReportProduct, setSelectedReportProduct] = useState<string>('all'); // 'all' or product name search
@@ -268,7 +283,7 @@ export default function App() {
         if (product) {
           addToCart(product);
         } else {
-          alert(`Produk dengan barcode "${barcode}" tidak ditemukan di database!`);
+          showAlert(`Produk dengan barcode "${barcode}" tidak ditemukan di database!`, 'error');
         }
       }
     } catch (e) {
@@ -336,7 +351,7 @@ export default function App() {
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     if (numericPaid < totalAmount) {
-      alert('Uang pembayaran kurang dari total belanja!');
+      showAlert('Uang pembayaran kurang dari total belanja!', 'error');
       return;
     }
 
@@ -368,9 +383,9 @@ export default function App() {
         setShowReceiptModal(true);
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
         clearCart();
-        alert('Mode Offline: Transaksi disimpan di antrean lokal (Queue) dan akan otomatis sinkron ke D1 saat online kembali.');
+        showAlert('Mode Offline: Transaksi disimpan di antrean lokal (Queue) dan akan otomatis sinkron ke D1 saat online kembali.', 'info');
       } catch (err) {
-        alert('Gagal menyimpan transaksi offline');
+        showAlert('Gagal menyimpan transaksi offline', 'error');
       }
       return;
     }
@@ -391,7 +406,7 @@ export default function App() {
         clearCart();
       } else {
         const err = await res.json();
-        alert(err.error || 'Gagal memproses transaksi');
+        showAlert(err.error || 'Gagal memproses transaksi', 'error');
       }
     } catch (e) {
       try {
@@ -404,9 +419,9 @@ export default function App() {
         setShowReceiptModal(true);
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
         clearCart();
-        alert('Koneksi server terputus. Transaksi dimasukkan ke antrean offline dan akan disinkronkan otomatis.');
+        showAlert('Koneksi server terputus. Transaksi dimasukkan ke antrean offline dan akan disinkronkan otomatis.', 'info');
       } catch (err) {
-        alert('Terjadi kesalahan koneksi server');
+        showAlert('Terjadi kesalahan koneksi server', 'error');
       }
     }
   };
@@ -416,7 +431,7 @@ export default function App() {
     e.preventDefault();
     const { barcode, name, price } = productForm;
     if (!barcode || !name || !price) {
-      alert('Semua field wajib diisi!');
+      showAlert('Semua field wajib diisi!', 'error');
       return;
     }
 
@@ -437,27 +452,33 @@ export default function App() {
         setProductModalOpen(false);
         setProductForm({ barcode: '', name: '', price: '' });
         setEditingProductId(null);
+        showAlert('Produk berhasil disimpan!', 'success');
       } else {
         const err = await res.json();
-        alert(err.error || 'Gagal menyimpan produk');
+        showAlert(err.error || 'Gagal menyimpan produk', 'error');
       }
     } catch (e) {
-      alert('Gagal menyimpan produk');
+      showAlert('Gagal menyimpan produk', 'error');
     }
   };
 
-  const handleDeleteProduct = async (id: number) => {
-    if (!confirm('Yakin ingin menghapus produk ini dari database?')) return;
-    try {
-      const res = await fetch(`/api/products?id=${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchProducts();
-      } else {
-        alert('Gagal menghapus produk');
+  const handleDeleteProduct = (id: number) => {
+    setConfirmDialog({
+      message: 'Yakin ingin menghapus produk ini dari database?',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/products?id=${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            fetchProducts();
+            showAlert('Produk berhasil dihapus', 'success');
+          } else {
+            showAlert('Gagal menghapus produk', 'error');
+          }
+        } catch (e) {
+          showAlert('Gagal menghapus produk', 'error');
+        }
       }
-    } catch (e) {
-      alert('Gagal menghapus produk');
-    }
+    });
   };
 
   const openEditProduct = (p: Product) => {
@@ -469,7 +490,7 @@ export default function App() {
   // Export Products to CSV / Google Sheets backup
   const exportProductsToCSV = () => {
     if (products.length === 0) {
-      alert('Tidak ada data produk untuk diexport.');
+      showAlert('Tidak ada data produk untuk diexport.', 'info');
       return;
     }
     const headers = ['ID', 'Barcode', 'Nama Barang', 'Harga (IDR)'];
@@ -484,6 +505,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    showAlert('File CSV produk berhasil diunduh', 'success');
   };
 
   // Import Products CSV State & Handler
@@ -494,7 +516,7 @@ export default function App() {
   const handleCSVImport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importFile) {
-      alert('Pilih file CSV terlebih dahulu!');
+      showAlert('Pilih file CSV terlebih dahulu!', 'error');
       return;
     }
 
@@ -504,7 +526,7 @@ export default function App() {
         const text = event.target?.result as string;
         const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
         if (lines.length < 2) {
-          alert('Format CSV tidak valid atau kosong (minimal header + 1 baris data).');
+          showAlert('Format CSV tidak valid atau kosong (minimal header + 1 baris data).', 'error');
           return;
         }
 
@@ -531,7 +553,7 @@ export default function App() {
         }
 
         if (parsedProducts.length === 0) {
-          alert('Tidak ada data produk valid yang dapat dibaca dari file CSV.');
+          showAlert('Tidak ada data produk valid yang dapat dibaca dari file CSV.', 'error');
           return;
         }
 
@@ -543,17 +565,17 @@ export default function App() {
 
         if (res.ok) {
           const result = await res.json();
-          alert(`Berhasil mengimpor! Ditambahkan: ${result.countAdded}, Diperbarui: ${result.countUpdated}`);
+          showAlert(`Berhasil mengimpor! Ditambahkan: ${result.countAdded}, Diperbarui: ${result.countUpdated}`, 'success');
           setImportModalOpen(false);
           setImportFile(null);
           fetchProducts();
         } else {
           const err = await res.json();
-          alert(err.error || 'Gagal mengimpor data');
+          showAlert(err.error || 'Gagal mengimpor data', 'error');
         }
       } catch (err) {
         console.error('Import parse error', err);
-        alert('Gagal memproses file CSV');
+        showAlert('Gagal memproses file CSV', 'error');
       }
     };
     reader.readAsText(importFile);
@@ -571,7 +593,7 @@ export default function App() {
       a.click();
     } catch (err) {
       console.error('Failed to generate receipt image', err);
-      alert('Gagal mendownload gambar struk');
+      showAlert('Gagal mendownload gambar struk', 'error');
     }
   };
 
@@ -598,7 +620,11 @@ Kembalian      : ${formatRupiah(completedTx.change_amount)}
 Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
     const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank');
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
   };
 
   // Filter products for POS
@@ -1736,6 +1762,56 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 className="bg-rose-600 hover:bg-rose-700 text-white text-base font-bold py-3.5 rounded-xl shadow-md transition"
               >
                 Selesai (OK)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST NOTIFICATION */}
+      {toast && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4 pointer-events-auto">
+          <div className={`p-4 rounded-xl shadow-xl border flex items-center justify-between gap-3 text-sm font-medium ${
+            toast.type === 'error'
+              ? 'bg-rose-50 border-rose-300 text-rose-800'
+              : toast.type === 'success'
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+              : 'bg-indigo-50 border-indigo-300 text-indigo-800'
+          }`}>
+            <span>{toast.message}</span>
+            <button
+              onClick={() => setToast(null)}
+              className="p-1 rounded-md hover:bg-black/5 text-current opacity-70 hover:opacity-100 transition"
+              aria-label="Tutup"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* IN-APP CONFIRMATION DIALOG */}
+      {confirmDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="font-bold text-slate-800 text-base">Konfirmasi Aksi</h3>
+            <p className="text-sm text-slate-600">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  const action = confirmDialog.onConfirm;
+                  setConfirmDialog(null);
+                  action();
+                }}
+                className="px-4 py-2 text-sm text-white bg-rose-600 hover:bg-rose-700 rounded-xl font-medium transition shadow-sm"
+              >
+                Ya, Lanjutkan
               </button>
             </div>
           </div>
