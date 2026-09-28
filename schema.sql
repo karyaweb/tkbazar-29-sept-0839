@@ -1,20 +1,28 @@
 -- Skema Database Cloudflare D1 untuk TokoBazar
 -- Nama Database di Cloudflare: tokobazar-db
 
-DROP TABLE IF EXISTS transactions;
-DROP TABLE IF EXISTS transaction_items;
-DROP TABLE IF EXISTS products;
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'KASIR', -- 'KASIR' atau 'ADMIN'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     barcode TEXT UNIQUE NOT NULL, -- Menyimpan kode angka Barcode / QR Code
     name TEXT NOT NULL,          -- Nama barang
     price REAL NOT NULL          -- Harga barang (IDR)
 );
 
-CREATE TABLE transactions (
+CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_no TEXT UNIQUE NOT NULL,
+    subtotal_amount REAL,
+    discount_amount REAL,
+    tax_amount REAL,
     total_amount REAL NOT NULL,
     paid_amount REAL NOT NULL,
     change_amount REAL NOT NULL,
@@ -22,7 +30,7 @@ CREATE TABLE transactions (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE transaction_items (
+CREATE TABLE IF NOT EXISTS transaction_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_no TEXT NOT NULL,
     product_id INTEGER,
@@ -33,8 +41,13 @@ CREATE TABLE transaction_items (
     FOREIGN KEY (invoice_no) REFERENCES transactions(invoice_no)
 );
 
+-- Seed Data User Default
+INSERT OR IGNORE INTO users (id, username, password, name, role) VALUES 
+(1, 'kasir', 'kasir1234', 'Kasir Utama', 'KASIR'),
+(2, 'admin', 'admin1234', 'Administrator', 'ADMIN');
+
 -- Seed Data Awal Produk TokoBazar
-INSERT INTO products (barcode, name, price) VALUES 
+INSERT OR IGNORE INTO products (barcode, name, price) VALUES 
 ('8996001321045', 'Indomie Goreng Special 85g', 3500),
 ('8996001321052', 'Indomie Kuah Ayam Bawang', 3200),
 ('8999999123456', 'Kopi Kapal Api Special 165g', 12500),

@@ -1,6 +1,6 @@
 /**
  * Cloudflare Pages Function: /api/bootstrap
- * Otomatis membuat tabel-tabel (products, transactions, transaction_items)
+ * Otomatis membuat tabel-tabel (users, products, transactions, transaction_items)
  * dan mengisi seed data sampel jika database D1 belum ada struktur tabelnya.
  */
 
@@ -17,6 +17,16 @@ export async function onRequestPost(context) {
 
     // 1. Create Tables IF NOT EXISTS
     await db.batch([
+      db.prepare(`
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT UNIQUE NOT NULL,
+          password TEXT NOT NULL,
+          name TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'KASIR',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `),
       db.prepare(`
         CREATE TABLE IF NOT EXISTS products (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,12 +63,22 @@ export async function onRequestPost(context) {
       `)
     ]);
 
-    // 2. Check if products table has any records
-    const { results } = await db.prepare("SELECT COUNT(*) as count FROM products").all();
-    const count = results[0]?.count || 0;
+    // 2. Check & Seed Users
+    const { results: userRes } = await db.prepare("SELECT COUNT(*) as count FROM users").all();
+    const userCount = userRes[0]?.count || 0;
+    if (userCount === 0) {
+      await db.batch([
+        db.prepare("INSERT OR IGNORE INTO users (username, password, name, role) VALUES ('kasir', 'kasir1234', 'Kasir Utama', 'KASIR')"),
+        db.prepare("INSERT OR IGNORE INTO users (username, password, name, role) VALUES ('admin', 'admin1234', 'Administrator', 'ADMIN')")
+      ]);
+    }
+
+    // 3. Check & Seed Products
+    const { results: prodRes } = await db.prepare("SELECT COUNT(*) as count FROM products").all();
+    const prodCount = prodRes[0]?.count || 0;
 
     let seeded = false;
-    if (count === 0) {
+    if (prodCount === 0) {
       // Seed default items
       await db.batch([
         db.prepare("INSERT OR IGNORE INTO products (barcode, name, price) VALUES ('8996001321045', 'Indomie Goreng Special 85g', 3500)"),
@@ -77,7 +97,7 @@ export async function onRequestPost(context) {
 
     return Response.json({
       success: true,
-      message: "Database Cloudflare D1 berhasil di-bootstrap! Tabel 'products', 'transactions', dan 'transaction_items' telah siap.",
+      message: "Database Cloudflare D1 berhasil di-bootstrap! Tabel 'users', 'products', 'transactions', dan 'transaction_items' telah siap.",
       seeded
     });
   } catch (err) {

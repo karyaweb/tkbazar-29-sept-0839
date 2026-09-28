@@ -49,7 +49,16 @@ import {
   BookOpen,
   List,
   Eye,
-  CheckCircle
+  CheckCircle,
+  Lock,
+  Unlock,
+  User,
+  UserPlus,
+  Users,
+  Key,
+  LogOut,
+  ShieldAlert,
+  EyeOff
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import html2canvas from 'html2canvas';
@@ -168,6 +177,245 @@ export default function App() {
   const [taxValue, setTaxValue] = useState<string>('');
   const [showTaxSection, setShowTaxSection] = useState<boolean>(false);
   const [menuDropdownOpen, setMenuDropdownOpen] = useState<boolean>(false);
+
+  // User Auth & Protection State
+  interface AuthUser {
+    id: number;
+    username: string;
+    name: string;
+    role: 'KASIR' | 'ADMIN';
+  }
+
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    try {
+      const saved = localStorage.getItem('tokobazar_auth_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [loginUsername, setLoginUsername] = useState<string>('kasir');
+  const [loginPassword, setLoginPassword] = useState<string>('kasir1234');
+  const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
+  const [loginLoading, setLoginLoading] = useState<boolean>(false);
+
+  // Brute-force Protection State
+  const [failedAttempts, setFailedAttempts] = useState<number>(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number>(0);
+  const [lockoutSecondsLeft, setLockoutSecondsLeft] = useState<number>(0);
+
+  // User Management State (ADMIN only)
+  const [userModalOpen, setUserModalOpen] = useState<boolean>(false);
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [userLoading, setUserLoading] = useState<boolean>(false);
+  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', name: '', role: 'KASIR' as 'KASIR' | 'ADMIN' });
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [editUserForm, setEditUserForm] = useState({ name: '', role: 'KASIR' as 'KASIR' | 'ADMIN', password: '' });
+
+  // Lockout Countdown Timer Effect
+  useEffect(() => {
+    if (lockoutUntil > Date.now()) {
+      const interval = setInterval(() => {
+        const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+        if (remaining <= 0) {
+          setLockoutSecondsLeft(0);
+          setLockoutUntil(0);
+          setFailedAttempts(0);
+          clearInterval(interval);
+        } else {
+          setLockoutSecondsLeft(remaining);
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [lockoutUntil]);
+
+  // Handle Tab Switch with RBAC protection for KASIR
+  const handleTabChange = (tab: string) => {
+    if (currentUser?.role === 'KASIR' && ['products', 'top-selling', 'settings', 'cloudflare'].includes(tab)) {
+      showAlert('🔒 AKSES DIBATASI KHUSUS ADMIN!\nKasir hanya dapat mengakses Kasir (Hitung), Katalog Produk, dan Riwayat Transaksi.', 'error');
+      return;
+    }
+    setActiveTab(tab as any);
+    setMenuDropdownOpen(false);
+  };
+
+  // Login Handler
+  const handleLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (lockoutSecondsLeft > 0) {
+      showAlert(`⚠️ Login terkunci! Silakan tunggu ${lockoutSecondsLeft} detik lagi.`, 'error');
+      return;
+    }
+    if (!loginUsername.trim() || !loginPassword.trim()) {
+      showAlert('Username dan Password wajib diisi!', 'error');
+      return;
+    }
+
+    setLoginLoading(true);
+    try {
+      const res = await fetch('/api/auth?action=login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success && data.user) {
+        setCurrentUser(data.user);
+        localStorage.setItem('tokobazar_auth_user', JSON.stringify(data.user));
+        setCashierName(data.user.name);
+        localStorage.setItem('tokobazar_cashier_name', data.user.name);
+        setFailedAttempts(0);
+        showAlert(`✅ Login Berhasil! Selamat bekerja, ${data.user.name} (${data.user.role})`, 'success');
+      } else {
+        const newFailed = failedAttempts + 1;
+        setFailedAttempts(newFailed);
+        if (newFailed >= 5) {
+          const lockTime = Date.now() + 60000;
+          setLockoutUntil(lockTime);
+          setLockoutSecondsLeft(60);
+          showAlert('⚠️ 5x SALAH PASSWORD! Login dikunci selama 60 detik untuk mencegah percobaan tidak sah.', 'error');
+        } else {
+          showAlert(`⚠️ ${data.error || 'Username atau Password salah!'} (Percobaan gagal ${newFailed}/5)`, 'error');
+        }
+      }
+    } catch (err: any) {
+      // Offline fallback for default credentials
+      const u = loginUsername.trim().toLowerCase();
+      const p = loginPassword.trim();
+      if (u === 'kasir' && p === 'kasir1234') {
+        const localUser: AuthUser = { id: 1, username: 'kasir', name: 'Kasir Utama', role: 'KASIR' };
+        setCurrentUser(localUser);
+        localStorage.setItem('tokobazar_auth_user', JSON.stringify(localUser));
+        setCashierName('Kasir Utama');
+        setFailedAttempts(0);
+        showAlert('✅ Login Kasir Utama Berhasil (Offline)', 'success');
+      } else if (u === 'admin' && p === 'admin1234') {
+        const localUser: AuthUser = { id: 2, username: 'admin', name: 'Administrator', role: 'ADMIN' };
+        setCurrentUser(localUser);
+        localStorage.setItem('tokobazar_auth_user', JSON.stringify(localUser));
+        setCashierName('Administrator');
+        setFailedAttempts(0);
+        showAlert('✅ Login Administrator Berhasil (Offline)', 'success');
+      } else {
+        const newFailed = failedAttempts + 1;
+        setFailedAttempts(newFailed);
+        if (newFailed >= 5) {
+          setLockoutUntil(Date.now() + 60000);
+          setLockoutSecondsLeft(60);
+          showAlert('⚠️ 5x SALAH PASSWORD! Login dikunci selama 60 detik.', 'error');
+        } else {
+          showAlert(`⚠️ Username atau Password salah! (Gagal ${newFailed}/5)`, 'error');
+        }
+      }
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  // Logout Handler
+  const handleLogout = () => {
+    setConfirmDialog({
+      message: 'Apakah Anda yakin ingin keluar / logout dari aplikasi kasir ini?',
+      onConfirm: () => {
+        setCurrentUser(null);
+        localStorage.removeItem('tokobazar_auth_user');
+        setMenuDropdownOpen(false);
+        showAlert('Anda telah berhasil keluar / logout.', 'info');
+      }
+    });
+  };
+
+  // Fetch Users List for ADMIN User Management
+  const fetchUsersList = async () => {
+    setUserLoading(true);
+    try {
+      const res = await fetch('/api/auth');
+      if (res.ok) {
+        const data = await res.json();
+        setUsersList(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch users:', e);
+    } finally {
+      setUserLoading(false);
+    }
+  };
+
+  // Create User Handler (ADMIN)
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserForm.username.trim() || !newUserForm.password.trim() || !newUserForm.name.trim()) {
+      showAlert('Username, Password, dan Nama Wajib Diisi!', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth?action=create_user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUserForm)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert(`✅ User baru "${newUserForm.name}" (${newUserForm.role}) berhasil dibuat!`, 'success');
+        setNewUserForm({ username: '', password: '', name: '', role: 'KASIR' });
+        fetchUsersList();
+      } else {
+        showAlert(data.error || 'Gagal menambahkan user', 'error');
+      }
+    } catch (err: any) {
+      showAlert(err.message || 'Gagal menambahkan user', 'error');
+    }
+  };
+
+  // Update / Reset Password User Handler (ADMIN)
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUserId) return;
+    try {
+      const res = await fetch('/api/auth?action=update_user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingUserId, ...editUserForm })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert('✅ Data user & reset password berhasil disimpan!', 'success');
+        setEditingUserId(null);
+        fetchUsersList();
+      } else {
+        showAlert(data.error || 'Gagal memperbarui data user', 'error');
+      }
+    } catch (err: any) {
+      showAlert('Gagal memperbarui data user', 'error');
+    }
+  };
+
+  // Delete User Handler (ADMIN)
+  const handleDeleteUser = (id: number, username: string) => {
+    if (currentUser && currentUser.username === username) {
+      showAlert('Anda tidak dapat menghapus akun Anda sendiri yang sedang aktif!', 'error');
+      return;
+    }
+    setConfirmDialog({
+      message: `Yakin ingin menghapus akun user "${username}" dari database?`,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/auth?id=${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            showAlert(`User "${username}" telah berhasil dihapus.`, 'success');
+            fetchUsersList();
+          } else {
+            showAlert('Gagal menghapus user', 'error');
+          }
+        } catch (err) {
+          showAlert('Gagal menghapus user', 'error');
+        }
+      }
+    });
+  };
 
   // In-app Alert / Toast & Confirm Dialog (avoids window.alert / window.confirm in iframe)
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'error' | 'success' } | null>(null);
@@ -1272,27 +1520,221 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
     showAlert('Data Top Terjual berhasil diunduh sebagai CSV', 'success');
   };
 
+  // Render Full Screen Login if not authenticated or accessing /login-999
+  if (!currentUser || window.location.pathname === '/login-999') {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 font-sans relative overflow-x-hidden">
+        {/* Background Decorative Gradient */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-rose-900/30 via-slate-950 to-slate-950 pointer-events-none" />
+
+        <div className="relative z-10 w-full max-w-md space-y-5">
+          {/* Top Brand Header */}
+          <div className="text-center space-y-2">
+            <div className="inline-flex p-3.5 bg-rose-600 text-white rounded-2xl shadow-xl ring-4 ring-rose-500/30">
+              <Store className="w-10 h-10" />
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              {storeName}
+            </h1>
+            <div className="inline-flex items-center gap-1.5 bg-slate-900 border border-slate-700 px-3.5 py-1 rounded-full text-xs font-bold text-rose-300">
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Akses Terproteksi Login Kasir & Admin</span>
+            </div>
+            <p className="text-xs text-slate-400 max-w-xs mx-auto">
+              Silakan login terlebih dahulu untuk mengakses sistem kalkulator kasir dan kelola toko.
+            </p>
+          </div>
+
+          {/* Brute Force Lockout Banner */}
+          {lockoutSecondsLeft > 0 && (
+            <div className="bg-red-950 border-2 border-red-500 text-white p-4 rounded-2xl space-y-1 text-center shadow-xl animate-bounce">
+              <div className="flex items-center justify-center gap-2 font-black text-sm text-amber-300">
+                <ShieldAlert className="w-5 h-5 text-red-400" />
+                <span>AKSES LOGIN DIKUNCI SEMENTARA!</span>
+              </div>
+              <p className="text-xs text-slate-200">
+                Terlalu banyak percobaan login yang gagal (5/5). Silakan tunggu:
+              </p>
+              <div className="text-2xl font-black font-mono text-amber-300 pt-1">
+                ⏱️ {lockoutSecondsLeft} Detik
+              </div>
+            </div>
+          )}
+
+          {/* Login Card Form */}
+          <div className="bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-300 mb-1.5">
+                  Username Akun
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-500" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ketik username (misal: kasir atau admin)"
+                    value={loginUsername}
+                    onChange={e => setLoginUsername(e.target.value)}
+                    disabled={lockoutSecondsLeft > 0}
+                    className="w-full pl-11 pr-4 py-3 bg-slate-950 border-2 border-slate-700 rounded-xl text-white font-bold text-base placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-300 mb-1.5">
+                  Password
+                </label>
+                <div className="relative">
+                  <Key className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-500" />
+                  <input
+                    type={showLoginPassword ? "text" : "password"}
+                    required
+                    placeholder="Masukkan password"
+                    value={loginPassword}
+                    onChange={e => setLoginPassword(e.target.value)}
+                    disabled={lockoutSecondsLeft > 0}
+                    className="w-full pl-11 pr-11 py-3 bg-slate-950 border-2 border-slate-700 rounded-xl text-white font-bold text-base placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3.5 top-3.5 text-slate-400 hover:text-white"
+                  >
+                    {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loginLoading || lockoutSecondsLeft > 0}
+                className="w-full py-3.5 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 text-white font-black text-base rounded-xl shadow-lg transition border-2 border-rose-400/50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {loginLoading ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span>Memeriksa Akses...</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-5 h-5 text-amber-300" />
+                    <span>MASUK KASIR / ADMIN</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            {/* Default Credentials Helper Card */}
+            <div className="pt-3 border-t border-slate-800 space-y-3">
+              <div className="text-center">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  🔐 Akun Default Aplikasi Toko:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                {/* Kasir Utama Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginUsername('kasir');
+                    setLoginPassword('kasir1234');
+                  }}
+                  className="bg-slate-950 hover:bg-slate-800 border border-slate-700 p-2.5 rounded-xl text-left transition space-y-1"
+                >
+                  <div className="flex items-center justify-between text-amber-300 font-black">
+                    <span>🔑 Kasir Utama</span>
+                    <span className="text-[10px] bg-amber-400/20 text-amber-300 px-1.5 py-0.2 rounded font-mono">KASIR</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 font-mono">
+                    User: <strong>kasir</strong><br/>
+                    Pass: <strong>kasir1234</strong>
+                  </div>
+                </button>
+
+                {/* Administrator Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginUsername('admin');
+                    setLoginPassword('admin1234');
+                  }}
+                  className="bg-slate-950 hover:bg-slate-800 border border-slate-700 p-2.5 rounded-xl text-left transition space-y-1"
+                >
+                  <div className="flex items-center justify-between text-rose-400 font-black">
+                    <span>👑 Administrator</span>
+                    <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded font-mono">ADMIN</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 font-mono">
+                    User: <strong>admin</strong><br/>
+                    Pass: <strong>admin1234</strong>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center text-[11px] text-slate-500">
+            TokoBazar POS • Path Khusus Login: <code className="text-amber-400 font-mono font-bold">/login-999</code>
+          </div>
+        </div>
+
+        {/* TOAST & CONFIRM MODAL ALSO RENDERABLE ON LOGIN SCREEN */}
+        {toast && (
+          <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 max-w-lg w-full px-4 pointer-events-auto">
+            <div className={`p-4 rounded-2xl shadow-2xl border-3 flex items-start justify-between gap-3 text-base font-black ${
+              toast.type === 'error'
+                ? 'bg-rose-950 border-rose-500 text-white'
+                : toast.type === 'success'
+                ? 'bg-emerald-950 border-emerald-400 text-white'
+                : 'bg-slate-900 border-amber-400 text-white'
+            }`}>
+              <div className="flex items-start gap-2.5">
+                <span className="text-xl shrink-0">
+                  {toast.type === 'error' ? '🚫' : toast.type === 'success' ? '✅' : 'ℹ️'}
+                </span>
+                <div className="whitespace-pre-line text-sm font-extrabold leading-relaxed">
+                  {toast.message}
+                </div>
+              </div>
+              <button
+                onClick={() => setToast(null)}
+                className="p-1 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
       {/* Top Navbar */}
       <header className="bg-slate-950 text-white shadow-lg sticky top-0 z-30 w-full overflow-x-hidden border-b-2 border-slate-800">
         <div className="max-w-7xl mx-auto px-2.5 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-2">
-          {/* Store Name: Icon hidden on smartphone vertical (<sm) to save space, 2-line layout on mobile, high contrast white text */}
+          {/* Store Name & Active User Badge */}
           <div className="flex items-center space-x-2 min-w-0">
             <div className="hidden sm:flex bg-rose-600 p-2 sm:p-2.5 rounded-xl shadow-md items-center justify-center shrink-0">
               <Store className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
             <div className="min-w-0 flex flex-col justify-center">
               <div className="flex items-center gap-1.5 leading-tight">
-                <h1 className="text-sm sm:text-lg md:text-xl font-black tracking-tight text-white truncate max-w-[130px] xs:max-w-[170px] sm:max-w-none">
+                <h1 className="text-sm sm:text-lg md:text-xl font-black tracking-tight text-white truncate max-w-[120px] xs:max-w-[160px] sm:max-w-none">
                   {storeName}
                 </h1>
-                <span className="text-[9px] sm:text-[10px] bg-rose-600 text-white px-1.5 py-0.2 rounded-md font-mono font-bold tracking-wider shrink-0">
-                  POS
+                <span className={`text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded-md font-mono font-bold tracking-wider shrink-0 ${
+                  currentUser.role === 'ADMIN' ? 'bg-amber-400 text-slate-950' : 'bg-rose-600 text-white'
+                }`}>
+                  {currentUser.role}
                 </span>
               </div>
-              <p className="text-[10px] sm:text-[11px] text-slate-300 font-semibold truncate leading-tight">
-                Kalkulator Kasir
+              <p className="text-[10px] sm:text-[11px] text-slate-300 font-semibold truncate leading-tight flex items-center gap-1">
+                <span>👤 {currentUser.name}</span>
               </p>
             </div>
           </div>
@@ -1300,7 +1742,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
           {/* Navigation Controls: Hitung (with total items) and MENU */}
           <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
             <button
-              onClick={() => setActiveTab('pos')}
+              onClick={() => handleTabChange('pos')}
               className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-base font-extrabold transition-all shadow-sm border-2 ${
                 activeTab === 'pos'
                   ? 'bg-rose-600 text-white border-rose-400 ring-2 ring-rose-500/40'
@@ -1358,9 +1800,9 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
               {/* Submenus with large legible touch targets for 60+ users */}
               <div className="space-y-2">
-                {/* 1. Lihat Katalog Produk (Request 2) */}
+                {/* 1. Lihat Katalog Produk */}
                 <button
-                  onClick={() => { setActiveTab('catalog'); setMenuDropdownOpen(false); }}
+                  onClick={() => handleTabChange('catalog')}
                   className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
                     activeTab === 'catalog'
                       ? 'bg-rose-600 text-white border-rose-400 shadow-md'
@@ -1379,12 +1821,14 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   <ChevronRight className="w-5 h-5 text-slate-400" />
                 </button>
 
-                {/* 2. Top Terjual (Request 3: strictly submenu of MENU) */}
+                {/* 2. Top Terjual (Blocked for KASIR) */}
                 <button
-                  onClick={() => { setActiveTab('top-selling'); setMenuDropdownOpen(false); }}
+                  onClick={() => handleTabChange('top-selling')}
                   className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
                     activeTab === 'top-selling'
                       ? 'bg-rose-600 text-white border-rose-400 shadow-md'
+                      : currentUser?.role === 'KASIR'
+                      ? 'bg-slate-900/60 text-slate-500 border-slate-800 opacity-60'
                       : 'bg-slate-800/80 hover:bg-slate-800 text-slate-100 border-slate-700'
                   }`}
                 >
@@ -1395,7 +1839,11 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     <div>
                       <div className="font-bold text-base flex items-center gap-1.5">
                         <span>Top Terjual</span>
-                        <span className="text-[10px] bg-amber-400/20 text-amber-300 border border-amber-400/30 px-1.5 py-0.2 rounded-full font-bold">Laris</span>
+                        {currentUser?.role === 'KASIR' ? (
+                          <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-500/40 px-1.5 py-0.2 rounded font-mono">🔒 ADMIN</span>
+                        ) : (
+                          <span className="text-[10px] bg-amber-400/20 text-amber-300 border border-amber-400/30 px-1.5 py-0.2 rounded-full font-bold">Laris</span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-400">Peringkat barang paling laku per periode</div>
                     </div>
@@ -1403,12 +1851,14 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   <ChevronRight className="w-5 h-5 text-slate-400" />
                 </button>
 
-                {/* 3. Kelola Barang */}
+                {/* 3. Kelola Barang (Blocked for KASIR) */}
                 <button
-                  onClick={() => { setActiveTab('products'); setMenuDropdownOpen(false); }}
+                  onClick={() => handleTabChange('products')}
                   className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
                     activeTab === 'products'
                       ? 'bg-rose-600 text-white border-rose-400 shadow-md'
+                      : currentUser?.role === 'KASIR'
+                      ? 'bg-slate-900/60 text-slate-500 border-slate-800 opacity-60'
                       : 'bg-slate-800/80 hover:bg-slate-800 text-slate-100 border-slate-700'
                   }`}
                 >
@@ -1417,7 +1867,12 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       <Barcode className="w-5 h-5 text-blue-400" />
                     </div>
                     <div>
-                      <div className="font-bold text-base">Kelola Barang</div>
+                      <div className="font-bold text-base flex items-center gap-1.5">
+                        <span>Kelola Barang</span>
+                        {currentUser?.role === 'KASIR' && (
+                          <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-500/40 px-1.5 py-0.2 rounded font-mono">🔒 ADMIN</span>
+                        )}
+                      </div>
                       <div className="text-xs text-slate-400">Tambah baru, ubah harga, hapus, import CSV</div>
                     </div>
                   </div>
@@ -1426,7 +1881,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
                 {/* 4. Riwayat Transaksi */}
                 <button
-                  onClick={() => { setActiveTab('history'); setMenuDropdownOpen(false); }}
+                  onClick={() => handleTabChange('history')}
                   className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
                     activeTab === 'history'
                       ? 'bg-rose-600 text-white border-rose-400 shadow-md'
@@ -1445,12 +1900,14 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   <ChevronRight className="w-5 h-5 text-slate-400" />
                 </button>
 
-                {/* 5. Pengaturan (Setting) (Request 4) */}
+                {/* 5. Pengaturan (Setting) (Blocked for KASIR) */}
                 <button
-                  onClick={() => { setActiveTab('settings'); setMenuDropdownOpen(false); }}
+                  onClick={() => handleTabChange('settings')}
                   className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
                     activeTab === 'settings'
                       ? 'bg-rose-600 text-white border-rose-400 shadow-md'
+                      : currentUser?.role === 'KASIR'
+                      ? 'bg-slate-900/60 text-slate-500 border-slate-800 opacity-60'
                       : 'bg-slate-800/80 hover:bg-slate-800 text-slate-100 border-slate-700'
                   }`}
                 >
@@ -1459,19 +1916,26 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       <Settings className="w-5 h-5 text-purple-400" />
                     </div>
                     <div>
-                      <div className="font-bold text-base">Pengaturan (Setting)</div>
-                      <div className="text-xs text-slate-400">Kamera default belakang/depan, nama kasir, suara</div>
+                      <div className="font-bold text-base flex items-center gap-1.5">
+                        <span>Pengaturan (Setting)</span>
+                        {currentUser?.role === 'KASIR' && (
+                          <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-500/40 px-1.5 py-0.2 rounded font-mono">🔒 ADMIN</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-400">Kamera default, nama kasir, suara</div>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-slate-400" />
                 </button>
 
-                {/* 6. Bantuan & Database D1 */}
+                {/* 6. Bantuan & Database D1 (Blocked for KASIR) */}
                 <button
-                  onClick={() => { setActiveTab('cloudflare'); setMenuDropdownOpen(false); }}
+                  onClick={() => handleTabChange('cloudflare')}
                   className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
                     activeTab === 'cloudflare'
                       ? 'bg-rose-600 text-white border-rose-400 shadow-md'
+                      : currentUser?.role === 'KASIR'
+                      ? 'bg-slate-900/60 text-slate-500 border-slate-800 opacity-60'
                       : 'bg-slate-800/80 hover:bg-slate-800 text-slate-100 border-slate-700'
                   }`}
                 >
@@ -1480,25 +1944,71 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       <Cloud className="w-5 h-5 text-cyan-400" />
                     </div>
                     <div>
-                      <div className="font-bold text-base">? (Petunjuk PWA & Bantuan)</div>
-                      <div className="text-xs text-slate-400">Petunjuk install PWA HP/PC, offline & D1</div>
+                      <div className="font-bold text-base flex items-center gap-1.5">
+                        <span>? (Petunjuk PWA & Bantuan)</span>
+                        {currentUser?.role === 'KASIR' && (
+                          <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-500/40 px-1.5 py-0.2 rounded font-mono">🔒 ADMIN</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-400">Petunjuk install PWA, offline & D1</div>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-slate-400" />
                 </button>
+
+                {/* 7. Kelola User & Password (ADMIN ONLY) */}
+                {currentUser?.role === 'ADMIN' && (
+                  <button
+                    onClick={() => {
+                      setUserModalOpen(true);
+                      setMenuDropdownOpen(false);
+                      fetchUsersList();
+                    }}
+                    className="w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 bg-gradient-to-r from-amber-950 to-slate-900 border-amber-500 text-amber-200 hover:bg-slate-800 shadow-md"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2.5 bg-amber-500/20 text-amber-300 rounded-xl">
+                        <Users className="w-5 h-5 text-amber-300" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-base text-amber-300 flex items-center gap-1.5">
+                          <span>Kelola User & Password</span>
+                          <span className="text-[10px] bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded font-black">ADMIN</span>
+                        </div>
+                        <div className="text-xs text-slate-300">Tambah user baru, reset password, ubah role</div>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-amber-300" />
+                  </button>
+                )}
               </div>
 
-              {/* Status & PWA Install in Menu */}
+              {/* Status & Logout Button */}
               <div className="pt-3 border-t border-slate-800 space-y-2">
-                <div className="flex items-center justify-between text-xs text-slate-400 bg-slate-950 p-2.5 rounded-xl">
-                  <span>Kasir Aktif: <strong className="text-slate-200">{cashierName}</strong></span>
+                <div className="flex items-center justify-between text-xs text-slate-300 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div className="flex items-center space-x-2">
+                    <User className="w-4 h-4 text-amber-400" />
+                    <span>
+                      User: <strong>{currentUser.name}</strong> ({currentUser.role})
+                    </span>
+                  </div>
                   <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${
                     isOnline ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/40' : 'bg-amber-950 text-amber-400 border border-amber-500/40'
                   }`}>
                     {isOnline ? '● Online' : '○ Offline'}
                   </span>
                 </div>
-                <div className="flex justify-center">
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full py-3 bg-red-950/80 hover:bg-red-900 text-red-200 font-black text-sm rounded-xl border border-red-700/60 flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4 text-red-300" />
+                  <span>Keluar / Logout Akun</span>
+                </button>
+
+                <div className="flex justify-center pt-1">
                   <PWAInstallButton className="w-full justify-center" />
                 </div>
               </div>
@@ -3908,6 +4418,205 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* USER MANAGEMENT MODAL (ADMIN ONLY) */}
+      {userModalOpen && currentUser?.role === 'ADMIN' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3 sm:p-5">
+          <div className="bg-slate-900 border-2 border-slate-700 text-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-5">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl">
+                  <Users className="w-6 h-6 text-amber-300" />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-amber-300">👑 Kelola User & Reset Password</h3>
+                  <p className="text-xs text-slate-400">Tambah akun kasir/admin baru & atur ulang password</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setUserModalOpen(false);
+                  setEditingUserId(null);
+                }}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-2 rounded-xl border border-slate-700 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Section 1: Form Tambah User Baru */}
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <h4 className="font-extrabold text-sm text-slate-200 flex items-center gap-1.5">
+                <UserPlus className="w-4 h-4 text-emerald-400" />
+                <span>+ Tambah Akun User Baru</span>
+              </h4>
+              <form onSubmit={handleCreateUser} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Username</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="misal: kasir2"
+                    value={newUserForm.username}
+                    onChange={e => setNewUserForm({ ...newUserForm, username: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Nama Lengkap</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="misal: Budi Kasir Siang"
+                    value={newUserForm.name}
+                    onChange={e => setNewUserForm({ ...newUserForm, name: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Password</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Password baru"
+                    value={newUserForm.password}
+                    onChange={e => setNewUserForm({ ...newUserForm, password: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-amber-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Hak Akses / Role</label>
+                  <select
+                    value={newUserForm.role}
+                    onChange={e => setNewUserForm({ ...newUserForm, role: e.target.value as any })}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  >
+                    <option value="KASIR">KASIR (Hanya transaksi & catalog)</option>
+                    <option value="ADMIN">ADMIN (Akses penuh + kelola user)</option>
+                  </select>
+                </div>
+                <div className="sm:col-span-2 pt-1">
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>Simpan User Baru</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Section 2: Daftar User & Reset Password */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="font-extrabold text-sm text-amber-300 flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-amber-400" />
+                  <span>Daftar User Terdaftar dalam Database</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={fetchUsersList}
+                  className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${userLoading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              {userLoading ? (
+                <div className="py-8 text-center text-slate-400 text-xs">Memuat daftar user...</div>
+              ) : (
+                <div className="space-y-2">
+                  {usersList.map((u: any) => (
+                    <div key={u.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-sm text-white">{u.name}</span>
+                          <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono font-bold ${
+                            u.role === 'ADMIN' ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-300'
+                          }`}>
+                            {u.role}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-400 font-mono">
+                          Username: <strong className="text-slate-200">{u.username}</strong>
+                          {u.password && (
+                            <span className="ml-2 text-slate-500">
+                              (Pass: <code className="text-amber-300">{u.password}</code>)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {editingUserId === u.id ? (
+                          <form onSubmit={handleUpdateUser} className="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-amber-500">
+                            <input
+                              type="text"
+                              placeholder="Pass baru"
+                              value={editUserForm.password}
+                              onChange={e => setEditUserForm({ ...editUserForm, password: e.target.value })}
+                              className="w-28 px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-white"
+                            />
+                            <select
+                              value={editUserForm.role}
+                              onChange={e => setEditUserForm({ ...editUserForm, role: e.target.value as any })}
+                              className="px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-xs font-bold text-white"
+                            >
+                              <option value="KASIR">KASIR</option>
+                              <option value="ADMIN">ADMIN</option>
+                            </select>
+                            <button
+                              type="submit"
+                              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-2.5 py-1 rounded-lg cursor-pointer"
+                            >
+                              Simpan
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingUserId(null)}
+                              className="text-xs text-slate-400 hover:text-white px-1"
+                            >
+                              ✕
+                            </button>
+                          </form>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingUserId(u.id);
+                                setEditUserForm({ name: u.name, role: u.role, password: '' });
+                              }}
+                              className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <Key className="w-3.5 h-3.5" />
+                              <span>Reset Pass</span>
+                            </button>
+                            {currentUser.username !== u.username && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(u.id, u.username)}
+                                className="bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-800 text-xs font-bold px-2.5 py-1.5 rounded-xl transition cursor-pointer"
+                                title="Hapus User"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
