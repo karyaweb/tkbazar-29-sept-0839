@@ -28,6 +28,9 @@ interface TransactionItem {
 interface Transaction {
   id: number;
   invoice_no: string;
+  subtotal_amount?: number;
+  discount_amount?: number;
+  tax_amount?: number;
   total_amount: number;
   paid_amount: number;
   change_amount: number;
@@ -242,7 +245,7 @@ async function startServer() {
 
   app.post('/api/transactions', (req, res) => {
     const db = loadDb();
-    const { invoice_no, total_amount, paid_amount, change_amount, cashier_name, items } = req.body;
+    const { invoice_no, subtotal_amount, discount_amount, tax_amount, total_amount, paid_amount, change_amount, cashier_name, items } = req.body;
 
     if (!invoice_no || total_amount === undefined || paid_amount === undefined || !items || !items.length) {
       return res.status(400).json({ error: 'Data transaksi tidak lengkap' });
@@ -251,6 +254,9 @@ async function startServer() {
     const newTx: Transaction = {
       id: db.transactions.length > 0 ? Math.max(...db.transactions.map(t => t.id)) + 1 : 1,
       invoice_no,
+      subtotal_amount: subtotal_amount !== undefined ? Number(subtotal_amount) : undefined,
+      discount_amount: discount_amount !== undefined ? Number(discount_amount) : undefined,
+      tax_amount: tax_amount !== undefined ? Number(tax_amount) : undefined,
       total_amount: Number(total_amount),
       paid_amount: Number(paid_amount),
       change_amount: Number(change_amount),
@@ -265,13 +271,20 @@ async function startServer() {
     res.json({ success: true, transaction: newTx });
   });
 
-  // Vite dev server middleware
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: 'spa',
-  });
-
-  app.use(vite.middlewares);
+  // Serve frontend: Vite dev server in development, static files in production
+  if (process.env.NODE_ENV === 'production') {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  } else {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  }
 
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   app.listen(port, '0.0.0.0', () => {

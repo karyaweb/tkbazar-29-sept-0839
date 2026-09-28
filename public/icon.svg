@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e11d48" />
+      <stop offset="100%" stop-color="#be123c" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#grad)" />
+  <g transform="translate(64, 64)" filter="url(#shadow)">
+    <!-- Store Roof -->
+    <path d="M48 116 L192 48 L336 116 L336 148 L48 148 Z" fill="#ffffff" />
+    <!-- Pillars -->
+    <rect x="76" y="148" width="32" height="136" fill="#fecdd3" rx="6" />
+    <rect x="176" y="148" width="32" height="136" fill="#fecdd3" rx="6" />
+    <rect x="276" y="148" width="32" height="136" fill="#fecdd3" rx="6" />
+    <!-- Base / Counter -->
+    <rect x="44" y="272" width="296" height="40" rx="10" fill="#ffffff" />
+    <!-- Barcode badge inside -->
+    <rect x="100" y="180" width="184" height="68" rx="10" fill="#ffffff" />
+    <!-- Barcode bars -->
+    <rect x="120" y="196" width="6" height="36" fill="#be123c" />
+    <rect x="132" y="196" width="12" height="36" fill="#be123c" />
+    <rect x="150" y="196" width="4" height="36" fill="#be123c" />
+    <rect x="160" y="196" width="14" height="36" fill="#be123c" />
+    <rect x="180" y="196" width="6" height="36" fill="#be123c" />
+    <rect x="192" y="196" width="10" height="36" fill="#be123c" />
+    <rect x="208" y="196" width="4" height="36" fill="#be123c" />
+    <rect x="218" y="196" width="14" height="36" fill="#be123c" />
+    <rect x="238" y="196" width="8" height="36" fill="#be123c" />
+    <rect x="252" y="196" width="10" height="36" fill="#be123c" />
+    <!-- Coin / Cart Sparkle -->
+    <circle cx="280" cy="100" r="28" fill="#fbbf24" stroke="#ffffff" stroke-width="4" />
+    <text x="280" y="108" font-size="24" font-weight="900" font-family="Arial, sans-serif" fill="#78350f" text-anchor="middle">Rp</text>
+  </g>
+</svg>
