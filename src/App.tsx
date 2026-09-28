@@ -178,18 +178,27 @@ export default function App() {
   const [showTaxSection, setShowTaxSection] = useState<boolean>(false);
   const [menuDropdownOpen, setMenuDropdownOpen] = useState<boolean>(false);
 
-  // User Auth & Protection State
+  // User Auth & Protection State (Session: 8 Hours / 480 Minutes)
+  const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 480 Menit
+
   interface AuthUser {
     id: number;
     username: string;
     name: string;
     role: 'KASIR' | 'ADMIN';
+    loginTime?: number;
   }
 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     try {
-      const saved = localStorage.getItem('tokobazar_auth_user');
-      return saved ? JSON.parse(saved) : null;
+      const savedStr = localStorage.getItem('tokobazar_auth_user');
+      if (!savedStr) return null;
+      const saved: AuthUser = JSON.parse(savedStr);
+      if (saved.loginTime && Date.now() - saved.loginTime > SESSION_DURATION_MS) {
+        localStorage.removeItem('tokobazar_auth_user');
+        return null;
+      }
+      return saved;
     } catch {
       return null;
     }
@@ -263,8 +272,9 @@ export default function App() {
       const data = await res.json();
 
       if (res.ok && data.success && data.user) {
-        setCurrentUser(data.user);
-        localStorage.setItem('tokobazar_auth_user', JSON.stringify(data.user));
+        const authData = { ...data.user, loginTime: Date.now() };
+        setCurrentUser(authData);
+        localStorage.setItem('tokobazar_auth_user', JSON.stringify(authData));
         setCashierName(data.user.name);
         localStorage.setItem('tokobazar_cashier_name', data.user.name);
         setFailedAttempts(0);
@@ -286,14 +296,14 @@ export default function App() {
       const u = loginUsername.trim().toLowerCase();
       const p = loginPassword.trim();
       if (u === 'kasir' && p === 'kasir1234') {
-        const localUser: AuthUser = { id: 1, username: 'kasir', name: 'Kasir Utama', role: 'KASIR' };
+        const localUser: AuthUser = { id: 1, username: 'kasir', name: 'Kasir Utama', role: 'KASIR', loginTime: Date.now() };
         setCurrentUser(localUser);
         localStorage.setItem('tokobazar_auth_user', JSON.stringify(localUser));
         setCashierName('Kasir Utama');
         setFailedAttempts(0);
         showAlert('✅ Login Kasir Utama Berhasil (Offline)', 'success');
       } else if (u === 'admin' && p === 'admin1234') {
-        const localUser: AuthUser = { id: 2, username: 'admin', name: 'Administrator', role: 'ADMIN' };
+        const localUser: AuthUser = { id: 2, username: 'admin', name: 'Administrator', role: 'ADMIN', loginTime: Date.now() };
         setCurrentUser(localUser);
         localStorage.setItem('tokobazar_auth_user', JSON.stringify(localUser));
         setCashierName('Administrator');
@@ -1896,8 +1906,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
             </div>
           </div>
 
-          <div className="text-center text-[11px] text-slate-500">
-            TokoBazar POS • Path Khusus Login: <code className="text-amber-400 font-mono font-bold">/login-999</code>
+          <div className="text-center text-[11px] text-slate-500 font-medium">
+            TokoBazar POS • Kasir & Manajemen Toko Digital
           </div>
         </div>
 
@@ -3802,6 +3812,65 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     <li>Atau klik ikon <strong>Install ⊕</strong> yang muncul di kanan bilah alamat (URL).</li>
                     <li>Klik <strong>"Install"</strong> untuk menjadikan aplikasi desktop resmi.</li>
                   </ol>
+                </div>
+              </div>
+            </div>
+
+            {/* Security & Authentication Documentation Card */}
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-5 text-white space-y-4 shadow-xl">
+              <div className="flex items-center space-x-3 pb-3 border-b border-slate-800">
+                <div className="bg-rose-500/20 text-rose-400 p-2.5 rounded-xl border border-rose-500/30">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-rose-300">
+                    🔒 Keamanan Sistem: Sesi Login & Anti-Brute Force
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Dokumentasi perlindungan akun kasir & admin serta aturan sesi kerja digital.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Sesi Login */}
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                    <Clock className="w-4 h-4 text-amber-400" />
+                    <span>⏱️ Masa Berlaku Sesi Login (8 Jam / 480 Menit)</span>
+                  </div>
+                  <ul className="text-xs text-slate-300 space-y-2 list-disc pl-4 leading-relaxed font-medium">
+                    <li>
+                      <strong>Durasi Aktif (8 Jam / 480 Menit):</strong> Disesuaikan dengan 1 shift standar jam kerja kasir toko. Selama masih dalam rentang 8 jam, kasir/admin tidak perlu mengulang login jika aplikasi ditutup atau di-refresh.
+                    </li>
+                    <li>
+                      <strong>Otomatis Kadaluarsa (Auto Expire):</strong> Setelah 8 jam berlalu sejak waktu login, sesi akan secara otomatis hangus demi keamanan data toko, dan sistem akan meminta login ulang.
+                    </li>
+                    <li>
+                      <strong>Manual Logout:</strong> Kasir/Admin juga dapat mengakhiri sesi kapan saja melalui tombol "Keluar / Logout Akun" di MENU ▾.
+                    </li>
+                  </ul>
+                </div>
+
+                {/* 2. Anti Brute Force */}
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+                    <Key className="w-4 h-4 text-rose-400" />
+                    <span>🛡️ Sistem Perlindungan Anti-Brute Force</span>
+                  </div>
+                  <ul className="text-xs text-slate-300 space-y-2 list-disc pl-4 leading-relaxed font-medium">
+                    <li>
+                      <strong>Batas Gagal Login (Max 5x):</strong> Pengguna diberikan kesempatan salah mengisikan password/username maksimal 5 kali. Setiap kali salah, indikator jumlah kesalahan akan muncul di layar.
+                    </li>
+                    <li>
+                      <strong>Penguncian Otomatis (Lockout 60 Detik):</strong> Pada percobaan gagal ke-5, sistem secara otomatis MENGUNCI SEMENTARA AKSI LOGIN SELAMA 60 DETIK. Formulir input dan tombol login dinonaktifkan dengan timer hitung mundur.
+                    </li>
+                    <li>
+                      <strong>Perlindungan Lapis Ganda (Dual-Layer):</strong>
+                      <br />• <em>Frontend UI Layer:</em> Memblokir interaksi tombol login di browser.
+                      <br />• <em>Backend Server API Layer (Rate Limiter):</em> Server API memblokir permintaan login berulang dari IP yang sama (HTTP 429).
+                    </li>
+                  </ul>
                 </div>
               </div>
             </div>
