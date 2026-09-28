@@ -1,1 +1,36 @@
 @import "tailwindcss";
+
+@keyframes totalFlash {
+  0% {
+    transform: scale(1.08);
+    background-color: #fef08a;
+    box-shadow: 0 0 0 6px rgba(234, 179, 8, 0.4);
+  }
+  50% {
+    transform: scale(1.04);
+    background-color: #fef9c3;
+    box-shadow: 0 0 0 4px rgba(234, 179, 8, 0.25);
+  }
+  100% {
+    transform: scale(1);
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.animate-total-change {
+  animation: totalFlash 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes cartBadgePop {
+  0% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-badge-pop {
+  animation: cartBadgePop 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

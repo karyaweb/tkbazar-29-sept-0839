@@ -130,6 +130,12 @@ export default function App() {
   const [cameraTestActive, setCameraTestActive] = useState<boolean>(false);
   const [cameraTestStarting, setCameraTestStarting] = useState<boolean>(false);
 
+  // Eye-director: Visual highlight whenever Total Belanja changes
+  const [totalHighlight, setTotalHighlight] = useState<boolean>(false);
+  const [itemAddedNotice, setItemAddedNotice] = useState<string | null>(null);
+  const highlightTimeoutRef = useRef<any>(null);
+  const noticeTimeoutRef = useRef<any>(null);
+
   const posScannerRef = useRef<Html5Qrcode | null>(null);
   const modalScannerRef = useRef<Html5Qrcode | null>(null);
   const testScannerRef = useRef<Html5Qrcode | null>(null);
@@ -596,15 +602,39 @@ export default function App() {
   };
 
   // Cart Management
+  const triggerTotalHighlight = (noticeText?: string) => {
+    setTotalHighlight(false);
+    if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    if (noticeTimeoutRef.current) clearTimeout(noticeTimeoutRef.current);
+
+    // Micro-delay to re-trigger CSS animation
+    setTimeout(() => {
+      setTotalHighlight(true);
+    }, 20);
+
+    highlightTimeoutRef.current = setTimeout(() => {
+      setTotalHighlight(false);
+    }, 1800);
+
+    if (noticeText) {
+      setItemAddedNotice(noticeText);
+      noticeTimeoutRef.current = setTimeout(() => {
+        setItemAddedNotice(null);
+      }, 2500);
+    }
+  };
+
   const addToCart = (product: Product) => {
     setRecentProducts(prev => {
       const filtered = prev.filter(p => p.id !== product.id);
       return [product, ...filtered].slice(0, 5);
     });
 
+    let newQty = 1;
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
       if (existing) {
+        newQty = existing.quantity + 1;
         return prev.map(item =>
           item.product.id === product.id
             ? { ...item, quantity: item.quantity + 1 }
@@ -613,24 +643,39 @@ export default function App() {
       }
       return [...prev, { product, quantity: 1 }];
     });
+
+    triggerTotalHighlight(`+ ${product.name} (Total: ${newQty} pcs)`);
   };
 
   const updateQuantity = (productId: number, delta: number) => {
+    let changedProductName = '';
+    let updatedQty = 0;
+
     setCart(prev =>
       prev
         .map(item => {
           if (item.product.id === productId) {
+            changedProductName = item.product.name;
             const newQty = item.quantity + delta;
+            updatedQty = newQty;
             return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
           return item;
         })
         .filter(Boolean) as CartItem[]
     );
+
+    if (delta > 0) {
+      triggerTotalHighlight(`+ 1 ${changedProductName || 'barang'} (Total: ${updatedQty} pcs)`);
+    } else {
+      triggerTotalHighlight(updatedQty > 0 ? `- 1 ${changedProductName || 'barang'} (Sisa: ${updatedQty} pcs)` : `Dihapus: ${changedProductName}`);
+    }
   };
 
   const removeFromCart = (productId: number) => {
-    setCart(prev => prev.filter(item => item.product.id !== productId));
+    const item = cart.find(i => i.product.id === productId);
+    setCart(prev => prev.filter(i => i.product.id !== productId));
+    triggerTotalHighlight(`Dihapus: ${item?.product.name || 'Barang'}`);
   };
 
   const clearCart = () => {
@@ -640,6 +685,7 @@ export default function App() {
     setTaxValue('');
     setShowDiscountSection(false);
     setShowTaxSection(false);
+    triggerTotalHighlight('Keranjang dikosongkan');
   };
 
   // Calculations
@@ -1123,35 +1169,42 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
       {/* Top Navbar */}
-      <header className="bg-slate-900 text-white shadow-md sticky top-0 z-30 w-full overflow-x-hidden">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2">
-          <div className="flex items-center space-x-2.5 min-w-0">
-            <div className="bg-rose-600 p-2 sm:p-2.5 rounded-xl shadow-lg flex items-center justify-center shrink-0">
+      <header className="bg-slate-950 text-white shadow-lg sticky top-0 z-30 w-full overflow-x-hidden border-b-2 border-slate-800">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-2">
+          {/* Store Name: Icon hidden on smartphone vertical (<sm) to save space, 2-line layout on mobile, high contrast white text */}
+          <div className="flex items-center space-x-2 min-w-0">
+            <div className="hidden sm:flex bg-rose-600 p-2 sm:p-2.5 rounded-xl shadow-md items-center justify-center shrink-0">
               <Store className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
-            <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate flex items-center gap-1.5">
-                <span>{storeName}</span>
-                <span className="text-[10px] bg-rose-500/35 text-rose-200 border border-rose-500/30 px-1.5 py-0.5 rounded-full font-mono">POS</span>
-              </h1>
-              <p className="text-[11px] text-slate-400 truncate hidden sm:block">Kalkulator Belanja & Kasir</p>
+            <div className="min-w-0 flex flex-col justify-center">
+              <div className="flex items-center gap-1.5 leading-tight">
+                <h1 className="text-sm sm:text-lg md:text-xl font-black tracking-tight text-white truncate max-w-[130px] xs:max-w-[170px] sm:max-w-none">
+                  {storeName}
+                </h1>
+                <span className="text-[9px] sm:text-[10px] bg-rose-600 text-white px-1.5 py-0.2 rounded-md font-mono font-bold tracking-wider shrink-0">
+                  POS
+                </span>
+              </div>
+              <p className="text-[10px] sm:text-[11px] text-slate-300 font-semibold truncate leading-tight">
+                Kalkulator Kasir
+              </p>
             </div>
           </div>
 
-          {/* Navigation Controls: Only Hitung and MENU to prevent horizontal scrolling on smartphones */}
-          <div className="flex items-center space-x-2 shrink-0">
+          {/* Navigation Controls: Hitung (with total items) and MENU */}
+          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
             <button
               onClick={() => setActiveTab('pos')}
-              className={`flex items-center space-x-1.5 px-3.5 sm:px-4 py-2.5 rounded-xl text-sm sm:text-base font-bold transition-all shadow-sm border-2 ${
+              className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-base font-extrabold transition-all shadow-sm border-2 ${
                 activeTab === 'pos'
-                  ? 'bg-rose-600 text-white border-rose-500 ring-2 ring-rose-500/30'
-                  : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700 hover:text-white'
+                  ? 'bg-rose-600 text-white border-rose-400 ring-2 ring-rose-500/40'
+                  : 'bg-slate-900 text-white border-slate-700 hover:bg-slate-800'
               }`}
             >
-              <ShoppingCart className="w-5 h-5 text-amber-300" />
+              <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
               <span>Hitung</span>
               {cart.length > 0 && (
-                <span className="bg-amber-400 text-slate-950 text-xs px-2 py-0.5 rounded-full font-black">
+                <span className={`bg-amber-400 text-slate-950 text-xs px-2 py-0.5 rounded-full font-black ${totalHighlight ? 'animate-badge-pop ring-2 ring-white' : ''}`}>
                   {cart.reduce((s, i) => s + i.quantity, 0)}
                 </span>
               )}
@@ -1160,13 +1213,13 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
             {/* MENU Button */}
             <button
               onClick={() => setMenuDropdownOpen(!menuDropdownOpen)}
-              className={`flex items-center space-x-1.5 px-3.5 sm:px-4 py-2.5 rounded-xl text-sm sm:text-base font-bold transition-all shadow-sm border-2 ${
+              className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-base font-extrabold transition-all shadow-sm border-2 ${
                 menuDropdownOpen || activeTab !== 'pos'
-                  ? 'bg-slate-800 text-white border-rose-500 ring-2 ring-rose-500/30'
-                  : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700 hover:text-white'
+                  ? 'bg-slate-900 text-white border-rose-500 ring-2 ring-rose-500/40'
+                  : 'bg-slate-900 text-white border-slate-700 hover:bg-slate-800'
               }`}
             >
-              <Menu className="w-5 h-5 text-rose-400" />
+              <Menu className="w-4 h-4 sm:w-5 sm:h-5 text-rose-400" />
               <span>MENU ▾</span>
             </button>
           </div>
@@ -1362,7 +1415,64 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
         {/* TAB 1: KASIR / POS */}
         {activeTab === 'pos' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="space-y-4">
+            {/* MOBILE QUICK TOTAL BAR (Visible on small screens <lg) - Directs senior cashier eyes directly to current Total Belanja */}
+            <div
+              className={`lg:hidden rounded-2xl p-3.5 transition-all duration-300 border-2 shadow-md ${
+                totalHighlight
+                  ? 'bg-amber-300 text-slate-950 border-amber-500 ring-4 ring-amber-400/50 scale-101 animate-total-change'
+                  : 'bg-slate-950 text-white border-slate-800'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center space-x-1.5">
+                    <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                      totalHighlight ? 'bg-slate-950 text-amber-300' : 'bg-rose-600 text-white'
+                    }`}>
+                      {totalHighlight ? '⚡ BERUBAH' : 'TOTAL BELANJA'}
+                    </span>
+                    <span className={`text-xs font-bold ${totalHighlight ? 'text-slate-900' : 'text-slate-300'}`}>
+                      ({cart.reduce((s, i) => s + i.quantity, 0)} Pcs)
+                    </span>
+                  </div>
+                  <div className={`text-xl sm:text-2xl font-black font-mono tracking-tight mt-0.5 ${
+                    totalHighlight ? 'text-slate-950 underline decoration-slate-950' : 'text-amber-300'
+                  }`}>
+                    {formatRupiah(totalAmount)}
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById('pos-cart-calculator-section');
+                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-black shadow-sm transition flex items-center gap-1 ${
+                      totalHighlight
+                        ? 'bg-slate-950 text-amber-300 hover:bg-slate-900'
+                        : 'bg-amber-400 text-slate-950 hover:bg-amber-300'
+                    }`}
+                  >
+                    <ShoppingCart className="w-4 h-4" />
+                    <span>Ke Bayar ↓</span>
+                  </button>
+                </div>
+              </div>
+
+              {itemAddedNotice && (
+                <div className={`mt-2 pt-1 border-t text-xs font-bold flex items-center justify-between ${
+                  totalHighlight ? 'border-slate-950/20 text-slate-950' : 'border-slate-800 text-amber-300'
+                }`}>
+                  <span className="truncate">👉 {itemAddedNotice}</span>
+                  <span className="text-[10px] bg-slate-900 text-white px-1.5 py-0.5 rounded shrink-0 ml-1">Total Baru</span>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Column: Product Search & Catalog */}
             <div className="lg:col-span-7 flex flex-col space-y-4">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
@@ -1546,19 +1656,21 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                           <div
                             key={product.id}
                             onClick={() => addToCart(product)}
-                            className="group bg-slate-50 hover:bg-rose-50/60 border border-slate-200 hover:border-rose-300 p-3.5 rounded-xl cursor-pointer transition flex flex-col justify-between"
+                            className="group bg-white hover:bg-rose-50/70 border-2 border-slate-300 hover:border-rose-600 p-3.5 rounded-xl cursor-pointer transition flex flex-col justify-between shadow-2xs hover:shadow-md"
                           >
                             <div>
                               <div className="flex items-start justify-between gap-2">
-                                <h4 className="font-medium text-slate-800 text-sm group-hover:text-rose-900 line-clamp-2">
+                                <h4 className="font-bold text-slate-950 text-sm sm:text-base group-hover:text-rose-950 line-clamp-2">
                                   {product.name}
                                 </h4>
                               </div>
-                              <p className="text-xs font-mono text-slate-400 mt-1">{product.barcode}</p>
+                              <p className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded inline-block mt-1.5 border border-slate-200">
+                                {product.barcode}
+                              </p>
                             </div>
-                            <div className="mt-3 flex items-center justify-between pt-2 border-t border-slate-200/60">
-                              <span className="font-bold text-rose-600 text-sm">{formatRupiah(product.price)}</span>
-                              <span className="text-xs bg-white text-slate-700 border border-slate-200 group-hover:bg-rose-600 group-hover:text-white px-2 py-1 rounded-lg font-medium transition">
+                            <div className="mt-3 flex items-center justify-between pt-2.5 border-t border-slate-200">
+                              <span className="font-black text-rose-700 text-base sm:text-lg font-mono">{formatRupiah(product.price)}</span>
+                              <span className="text-xs bg-rose-600 text-white group-hover:bg-rose-700 px-3 py-1.5 rounded-lg font-bold shadow-2xs transition">
                                 + Tambah
                               </span>
                             </div>
@@ -1572,7 +1684,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
             </div>
 
             {/* Right Column: Cart & Payment Calculator */}
-            <div className="lg:col-span-5 flex flex-col space-y-4">
+            <div id="pos-cart-calculator-section" className="lg:col-span-5 flex flex-col space-y-4">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-col h-full">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div className="flex items-center space-x-2">
@@ -1600,37 +1712,40 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     </div>
                   ) : (
                     cart.map(item => (
-                      <div key={item.product.id} className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                      <div key={item.product.id} className="bg-white p-3 sm:p-3.5 rounded-xl border-2 border-slate-300 shadow-xs flex items-center justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-medium text-slate-800 truncate">{item.product.name}</h4>
-                          <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                            <span>{formatRupiah(item.product.price)}</span>
+                          <h4 className="text-sm sm:text-base font-bold text-slate-950 truncate">{item.product.name}</h4>
+                          <div className="text-xs sm:text-sm text-slate-700 flex items-center gap-2 mt-0.5 font-bold">
+                            <span className="text-slate-900">{formatRupiah(item.product.price)}</span>
                             <span>×</span>
-                            <span className="font-semibold text-slate-700">{item.quantity}</span>
+                            <span className="bg-slate-100 text-slate-950 px-1.5 py-0.2 rounded border border-slate-300">{item.quantity}</span>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
+                          <div className="flex items-center bg-white border-2 border-slate-400 rounded-xl overflow-hidden shadow-xs">
                             <button
                               onClick={() => updateQuantity(item.product.id, -1)}
-                              className="p-1.5 hover:bg-slate-100 text-slate-600 transition"
+                              className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-950 font-black text-sm transition"
+                              title="Kurangi 1"
                             >
-                              <Minus className="w-3.5 h-3.5" />
+                              <Minus className="w-4 h-4 stroke-[3]" />
                             </button>
-                            <span className="px-2.5 text-xs font-semibold text-slate-800">{item.quantity}</span>
+                            <span className="px-2.5 text-sm font-black text-slate-950 font-mono">{item.quantity}</span>
                             <button
                               onClick={() => updateQuantity(item.product.id, 1)}
-                              className="p-1.5 hover:bg-slate-100 text-slate-600 transition"
+                              className="w-8 h-8 flex items-center justify-center bg-rose-600 hover:bg-rose-700 text-white font-black text-sm transition"
+                              title="Tambah 1"
                             >
-                              <Plus className="w-3.5 h-3.5" />
+                              <Plus className="w-4 h-4 stroke-[3]" />
                             </button>
                           </div>
-                          <span className="font-bold text-sm text-rose-600 min-w-[70px] text-right">
+                          <span className="font-black text-sm sm:text-base text-rose-700 min-w-[75px] text-right font-mono">
                             {formatRupiah(item.product.price * item.quantity)}
                           </span>
                           <button
                             onClick={() => removeFromCart(item.product.id)}
-                            className="text-slate-400 hover:text-red-600 p-1 transition"
+                            className="text-slate-400 hover:text-red-700 p-1.5 transition"
+                            title="Hapus barang dari keranjang"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -1836,28 +1951,66 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
                   {/* Active Discount / Tax line items in summary */}
                   {discountAmount > 0 && !showDiscountSection && (
-                    <div className="flex justify-between text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg">
-                      <span className="flex items-center gap-1">
-                        <Tag className="w-3 h-3" />
+                    <div className="flex justify-between text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-lg">
+                      <span className="flex items-center gap-1.5">
+                        <Tag className="w-3.5 h-3.5 text-emerald-800" />
                         <span>Diskon ({discountType === 'pct' ? `${discountValue}%` : 'Rp'}):</span>
                       </span>
-                      <span>- {formatRupiah(discountAmount)}</span>
+                      <span className="font-black text-emerald-950">- {formatRupiah(discountAmount)}</span>
                     </div>
                   )}
 
                   {taxAmount > 0 && !showTaxSection && (
-                    <div className="flex justify-between text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg">
-                      <span className="flex items-center gap-1">
-                        <Percent className="w-3 h-3" />
+                    <div className="flex justify-between text-xs font-bold text-indigo-900 bg-indigo-100 border border-indigo-300 px-3 py-1.5 rounded-lg">
+                      <span className="flex items-center gap-1.5">
+                        <Percent className="w-3.5 h-3.5 text-indigo-900" />
                         <span>Pajak ({taxType === 'pct' ? `${taxValue}%` : 'Rp'}):</span>
                       </span>
-                      <span>+ {formatRupiah(taxAmount)}</span>
+                      <span className="font-black text-indigo-950">+ {formatRupiah(taxAmount)}</span>
                     </div>
                   )}
 
-                  <div className="flex justify-between items-baseline pt-2 border-t border-slate-200">
-                    <span className="font-bold text-slate-900 text-base">Total Belanja</span>
-                    <span className="text-2xl font-black text-rose-600">{formatRupiah(totalAmount)}</span>
+                  {/* ULTRA HIGH CONTRAST TOTAL BELANJA DISPLAY WITH EYE-FOCUS ANIMATION */}
+                  <div
+                    className={`rounded-2xl p-4 transition-all duration-300 border-2 ${
+                      totalHighlight
+                        ? 'bg-amber-300 text-slate-950 border-amber-500 shadow-xl scale-102 ring-4 ring-amber-400/50 animate-total-change'
+                        : 'bg-slate-950 text-white border-slate-900 shadow-md'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center space-x-1.5">
+                        <span className={`text-xs font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                          totalHighlight ? 'bg-slate-950 text-amber-300' : 'bg-rose-600 text-white'
+                        }`}>
+                          {totalHighlight ? '⚡ ANGKA BERUBAH' : 'TOTAL HARUS DIBAYAR'}
+                        </span>
+                      </div>
+                      <span className={`text-xs font-bold ${totalHighlight ? 'text-slate-950' : 'text-slate-200'}`}>
+                        {cart.reduce((s, i) => s + i.quantity, 0)} Pcs
+                      </span>
+                    </div>
+
+                    <div className="flex items-baseline justify-between pt-1">
+                      <span className={`font-black text-sm sm:text-base ${totalHighlight ? 'text-slate-950' : 'text-white'}`}>
+                        TOTAL BELANJA
+                      </span>
+                      <span className={`text-2xl sm:text-3xl font-black tracking-tight font-mono ${
+                        totalHighlight ? 'text-slate-950 underline decoration-slate-950 decoration-3' : 'text-amber-300'
+                      }`}>
+                        {formatRupiah(totalAmount)}
+                      </span>
+                    </div>
+
+                    {/* Eye focus subtitle notice */}
+                    {itemAddedNotice && (
+                      <div className={`mt-2 pt-1.5 border-t text-xs font-bold flex items-center justify-between ${
+                        totalHighlight ? 'border-slate-950/30 text-slate-950' : 'border-slate-800 text-amber-300'
+                      }`}>
+                        <span className="truncate">👉 {itemAddedNotice}</span>
+                        <span className="text-[10px] bg-slate-900 text-white px-1.5 py-0.5 rounded shrink-0 ml-1">Total Baru</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1934,9 +2087,10 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* SUBMENU: LIHAT KATALOG PRODUK */}
+      {/* SUBMENU: LIHAT KATALOG PRODUK */}
         {activeTab === 'catalog' && (
           <div className="space-y-4">
             {/* Header Banner */}
@@ -1995,39 +2149,39 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   return (
                     <div
                       key={product.id}
-                      className="bg-white border-2 border-slate-200 hover:border-rose-300 rounded-2xl p-4 shadow-xs hover:shadow-md transition flex flex-col justify-between space-y-3"
+                      className="bg-white border-2 border-slate-300 hover:border-rose-600 rounded-2xl p-4 shadow-xs hover:shadow-md transition flex flex-col justify-between space-y-3"
                     >
                       <div>
                         <div className="flex items-start justify-between gap-2">
-                          <h3 className="font-bold text-slate-900 text-base sm:text-lg leading-snug">
+                          <h3 className="font-bold text-slate-950 text-base sm:text-lg leading-snug">
                             {product.name}
                           </h3>
                         </div>
                         <div className="flex items-center gap-2 mt-1.5">
-                          <span className="font-mono text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                          <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-300">
                             {product.barcode}
                           </span>
                         </div>
                       </div>
 
-                      <div className="pt-2 border-t border-slate-100 space-y-2.5">
+                      <div className="pt-2 border-t-2 border-slate-200 space-y-2.5">
                         <div className="flex items-baseline justify-between">
-                          <span className="text-xs text-slate-500 font-medium">Harga Jual:</span>
-                          <span className="text-xl sm:text-2xl font-black text-rose-600">
+                          <span className="text-xs font-bold text-slate-700">Harga Jual:</span>
+                          <span className="text-xl sm:text-2xl font-black text-rose-700 font-mono">
                             {formatRupiah(product.price)}
                           </span>
                         </div>
 
                         {cartItem ? (
-                          <div className="flex items-center justify-between bg-emerald-50 border border-emerald-300 rounded-xl p-1.5">
-                            <span className="text-xs font-bold text-emerald-800 pl-2">
+                          <div className="flex items-center justify-between bg-emerald-50 border-2 border-emerald-500 rounded-xl p-2">
+                            <span className="text-xs sm:text-sm font-black text-emerald-950 pl-1">
                               Di Keranjang: {cartItem.quantity} pcs
                             </span>
-                            <div className="flex items-center space-x-1">
+                            <div className="flex items-center space-x-1.5">
                               <button
                                 type="button"
                                 onClick={() => updateQuantity(product.id, -1)}
-                                className="w-8 h-8 flex items-center justify-center bg-white hover:bg-emerald-100 text-emerald-800 rounded-lg font-bold border border-emerald-200 transition"
+                                className="w-8 h-8 flex items-center justify-center bg-white hover:bg-emerald-100 text-emerald-950 font-black rounded-lg border-2 border-emerald-400 transition"
                               >
                                 -
                               </button>
@@ -2037,7 +2191,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                                   updateQuantity(product.id, 1);
                                   playBeepSound();
                                 }}
-                                className="w-8 h-8 flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition shadow-xs"
+                                className="w-8 h-8 flex items-center justify-center bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-black transition shadow-xs"
                               >
                                 +
                               </button>
@@ -2051,10 +2205,10 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                               playBeepSound();
                               showAlert(`${product.name} dimasukkan ke keranjang`, 'success');
                             }}
-                            className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-md shadow-rose-200 flex items-center justify-center space-x-1.5 transition active:scale-98"
+                            className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-black shadow-md flex items-center justify-center space-x-1.5 transition active:scale-98"
                           >
-                            <Plus className="w-4 h-4" />
-                            <span>Tambah ke Keranjang</span>
+                            <Plus className="w-4 h-4 stroke-[3]" />
+                            <span>+ Tambah ke Keranjang</span>
                           </button>
                         )}
                       </div>
