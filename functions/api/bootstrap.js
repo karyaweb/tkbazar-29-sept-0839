@@ -46,6 +46,8 @@ export async function onRequestPost(context) {
           paid_amount REAL NOT NULL,
           change_amount REAL NOT NULL,
           cashier_name TEXT DEFAULT 'Kasir 1',
+          payment_method TEXT DEFAULT 'TUNAI',
+          notes TEXT DEFAULT '',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
       `),
@@ -62,6 +64,18 @@ export async function onRequestPost(context) {
         );
       `)
     ]);
+
+    // 1b. Schema migrations for existing tables
+    try {
+      await db.prepare("ALTER TABLE transactions ADD COLUMN payment_method TEXT DEFAULT 'TUNAI'").run();
+    } catch (e) {
+      // Column payment_method may already exist
+    }
+    try {
+      await db.prepare("ALTER TABLE transactions ADD COLUMN notes TEXT DEFAULT ''").run();
+    } catch (e) {
+      // Column notes may already exist
+    }
 
     // 2. Check & Seed Users
     const { results: userRes } = await db.prepare("SELECT COUNT(*) as count FROM users").all();

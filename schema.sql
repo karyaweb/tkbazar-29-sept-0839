@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     paid_amount REAL NOT NULL,
     change_amount REAL NOT NULL,
     cashier_name TEXT DEFAULT 'Kasir 1',
+    payment_method TEXT DEFAULT 'TUNAI',
+    notes TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

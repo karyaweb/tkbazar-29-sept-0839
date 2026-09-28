@@ -86,6 +86,8 @@ export async function onRequestPost(context) {
       paid_amount,
       change_amount,
       cashier_name,
+      payment_method,
+      notes,
       items
     } = body;
 
@@ -102,8 +104,8 @@ export async function onRequestPost(context) {
     // Insert into transactions
     await db.prepare(`
       INSERT INTO transactions (
-        invoice_no, subtotal_amount, discount_amount, tax_amount, total_amount, paid_amount, change_amount, cashier_name
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        invoice_no, subtotal_amount, discount_amount, tax_amount, total_amount, paid_amount, change_amount, cashier_name, payment_method, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       invoice_no,
       subtotal_amount || 0,
@@ -112,7 +114,9 @@ export async function onRequestPost(context) {
       total_amount,
       paid_amount,
       change_amount,
-      cashier_name || 'Kasir 1'
+      cashier_name || 'Kasir 1',
+      payment_method || 'TUNAI',
+      notes || ''
     ).run();
 
     // Insert items in batch
@@ -143,6 +147,8 @@ export async function onRequestPost(context) {
         paid_amount,
         change_amount,
         cashier_name: cashier_name || 'Kasir 1',
+        payment_method: payment_method || 'TUNAI',
+        notes: notes || '',
         created_at: new Date().toISOString(),
         items
       }
