@@ -236,6 +236,26 @@ async function startServer() {
     res.json({ success: true, countAdded, countUpdated });
   });
 
+  // Bootstrap API (ensures database structure and initial seed items)
+  app.post('/api/bootstrap', (_req, res) => {
+    const db = loadDb();
+    if (db.products.length === 0) {
+      const initial = getInitialData();
+      db.products = initial.products;
+      saveDb(db);
+      return res.json({
+        success: true,
+        message: 'Database lokal berhasil di-bootstrap dengan data sampel awal!',
+        seeded: true
+      });
+    }
+    res.json({
+      success: true,
+      message: 'Database lokal sudah siap dan memiliki data.',
+      seeded: false
+    });
+  });
+
   // Transactions API
   app.get('/api/transactions', (req, res) => {
     const db = loadDb();
