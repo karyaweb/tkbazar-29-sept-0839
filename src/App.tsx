@@ -1302,19 +1302,239 @@ export default function App() {
     reader.readAsText(importFile);
   };
 
-  // Download receipt as image via html2canvas
+  // Helper to generate a crisp native Canvas receipt if html2canvas fails or is blocked
+  const generateNativeReceiptCanvas = (tx: Transaction): HTMLCanvasElement => {
+    const canvas = document.createElement('canvas');
+    const width = 500;
+    const baseHeight = 360;
+    const itemHeight = 44 * tx.items.length;
+    const height = baseHeight + itemHeight;
+
+    canvas.width = width * 2; // High DPI (2x)
+    canvas.height = height * 2;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
+
+    ctx.scale(2, 2);
+
+    // White Background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    // Title & Header
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('TOKO BAZAR', width / 2, 42);
+
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('Struk Pembayaran Belanja Pelanggan', width / 2, 65);
+
+    // Dashed Separator
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(25, 80);
+    ctx.lineTo(width - 25, 80);
+    ctx.stroke();
+
+    // Invoice Info
+    ctx.setLineDash([]);
+    ctx.textAlign = 'left';
+    ctx.font = '13px monospace';
+    ctx.fillStyle = '#334155';
+    let y = 105;
+
+    ctx.fillText(`No. Inv : ${tx.invoice_no}`, 25, y);
+    y += 22;
+    ctx.fillText(`Tanggal : ${new Date(tx.created_at).toLocaleString('id-ID')}`, 25, y);
+    y += 22;
+    ctx.fillText(`Kasir   : ${tx.cashier_name}`, 25, y);
+    y += 18;
+
+    // Dashed Separator
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(25, y);
+    ctx.lineTo(width - 25, y);
+    ctx.stroke();
+    y += 24;
+
+    // Items List
+    ctx.setLineDash([]);
+    tx.items.forEach(item => {
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(item.product_name, 25, y);
+      y += 20;
+
+      ctx.font = '13px monospace';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(`${item.quantity} x ${formatRupiah(item.price)}`, 35, y);
+
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 14px monospace';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(formatRupiah(item.subtotal), width - 25, y);
+      ctx.textAlign = 'left';
+
+      y += 24;
+    });
+
+    // Dashed Separator
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(25, y);
+    ctx.lineTo(width - 25, y);
+    ctx.stroke();
+    y += 24;
+
+    // Subtotal & Extras
+    ctx.setLineDash([]);
+    if (tx.subtotal_amount && (tx.discount_amount || tx.tax_amount)) {
+      ctx.font = '13px sans-serif';
+      ctx.fillStyle = '#475569';
+      ctx.fillText('Subtotal Brutto', 25, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(formatRupiah(tx.subtotal_amount), width - 25, y);
+      ctx.textAlign = 'left';
+      y += 20;
+    }
+
+    if (tx.discount_amount && tx.discount_amount > 0) {
+      ctx.font = '13px sans-serif';
+      ctx.fillStyle = '#15803d';
+      ctx.fillText('Diskon', 25, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`-${formatRupiah(tx.discount_amount)}`, width - 25, y);
+      ctx.textAlign = 'left';
+      y += 20;
+    }
+
+    if (tx.tax_amount && tx.tax_amount > 0) {
+      ctx.font = '13px sans-serif';
+      ctx.fillStyle = '#4338ca';
+      ctx.fillText(`Pajak / Biaya`, 25, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`+${formatRupiah(tx.tax_amount)}`, width - 25, y);
+      ctx.textAlign = 'left';
+      y += 20;
+    }
+
+    // TOTAL
+    ctx.font = 'bold 17px sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText('TOTAL', 25, y);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#e11d48';
+    ctx.fillText(formatRupiah(tx.total_amount), width - 25, y);
+    ctx.textAlign = 'left';
+    y += 24;
+
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.fillText('Tunai Dibayar', 25, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(formatRupiah(tx.paid_amount), width - 25, y);
+    ctx.textAlign = 'left';
+    y += 20;
+
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.fillText('Kembalian', 25, y);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#16a34a';
+    ctx.fillText(formatRupiah(tx.change_amount), width - 25, y);
+    ctx.textAlign = 'left';
+    y += 28;
+
+    // Bottom Dashed
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(25, y);
+    ctx.lineTo(width - 25, y);
+    ctx.stroke();
+    y += 24;
+
+    ctx.setLineDash([]);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = '#334155';
+    ctx.fillText('Terima Kasih Telah Berbelanja!', width / 2, y);
+
+    return canvas;
+  };
+
+  // Download receipt as image with dual strategy
   const downloadReceiptAsImage = async () => {
-    if (!receiptRef.current) return;
+    if (!completedTx) {
+      showAlert('Tidak ada data transaksi struk untuk diunduh', 'error');
+      return;
+    }
+
     try {
-      const canvas = await html2canvas(receiptRef.current, { scale: 2, backgroundColor: '#ffffff' });
-      const image = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = image;
-      a.download = `Struk-${completedTx?.invoice_no.replace(/\//g, '-')}.png`;
-      a.click();
+      let dataUrl: string | null = null;
+
+      // 1. Try html2canvas with un-truncated container cloning
+      if (receiptRef.current) {
+        try {
+          const canvas = await html2canvas(receiptRef.current, {
+            scale: 2,
+            backgroundColor: '#ffffff',
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            onclone: (clonedDoc) => {
+              const el = clonedDoc.getElementById('receipt-print-area');
+              if (el) {
+                el.style.maxHeight = 'none';
+                el.style.overflow = 'visible';
+              }
+              const scrollableItems = clonedDoc.querySelectorAll('#receipt-print-area div');
+              scrollableItems.forEach((item: any) => {
+                if (item.style) {
+                  item.style.maxHeight = 'none';
+                  item.style.overflow = 'visible';
+                }
+              });
+            }
+          });
+          dataUrl = canvas.toDataURL('image/png');
+        } catch (e) {
+          console.warn('html2canvas failed, using native canvas fallback', e);
+        }
+      }
+
+      // 2. Fallback: Generate crisp native HTML5 canvas
+      if (!dataUrl || dataUrl.length < 100) {
+        const fallbackCanvas = generateNativeReceiptCanvas(completedTx);
+        dataUrl = fallbackCanvas.toDataURL('image/png');
+      }
+
+      // 3. Trigger Download via Blob + ObjectURL for universal mobile/iframe support
+      const fetchRes = await fetch(dataUrl);
+      const blob = await fetchRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      const safeInvoice = (completedTx.invoice_no || 'struk').replace(/[\/\\]/g, '-');
+      link.download = `Struk-${safeInvoice}.png`;
+      document.body.appendChild(link);
+      link.click();
+
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+      }, 500);
+
+      showAlert('✅ Gambar struk berhasil diunduh ke galeri / penyimpanan!', 'success');
     } catch (err) {
       console.error('Failed to generate receipt image', err);
-      showAlert('Gagal mendownload gambar struk', 'error');
+      showAlert('Gagal mendownload gambar struk. Silakan coba lagi.', 'error');
     }
   };
 
