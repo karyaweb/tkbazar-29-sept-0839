@@ -162,6 +162,12 @@ export default function App() {
   const [thermalPaperWidth, setThermalPaperWidth] = useState<'58mm' | '80mm'>(() => {
     return (localStorage.getItem('tokobazar_thermal_paper_width') as '58mm' | '80mm') || '58mm';
   });
+  const [showBankQuickChips, setShowBankQuickChips] = useState<boolean>(() => {
+    return localStorage.getItem('tokobazar_show_quick_chips') !== 'false';
+  });
+  const [mobileMarginMode, setMobileMarginMode] = useState<'default' | 'max_width'>(() => {
+    return (localStorage.getItem('tokobazar_mobile_margin_mode') as 'default' | 'max_width') || 'default';
+  });
 
   // Mobile POS Battery Monitor State
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
@@ -2859,7 +2865,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6">
+      <main className={`flex-1 max-w-7xl w-full mx-auto transition-all ${mobileMarginMode === 'max_width' ? 'px-0 py-1 sm:px-2 py-2 md:p-6' : 'p-3.5 sm:p-4 md:p-6'}`}>
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -3769,22 +3775,24 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                           onChange={e => setPaymentNotes(e.target.value)}
                           className="w-full px-3 py-2 bg-white text-slate-950 rounded-lg text-xs font-bold border-2 border-sky-300 focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-slate-400"
                         />
-                        {/* Quick Chips for Bank & E-Wallet Notes */}
-                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                          {['Transfer BCA', 'Transfer BRI', 'Transfer Mandiri', 'QRIS GoPay', 'QRIS ShopeePay'].map(chip => (
-                            <button
-                              key={chip}
-                              type="button"
-                              onClick={() => {
-                                if (!paymentNotes) setPaymentNotes(chip);
-                                else if (!paymentNotes.includes(chip)) setPaymentNotes(`${chip} - ${paymentNotes}`);
-                              }}
-                              className="text-[10px] bg-slate-800 hover:bg-slate-700 text-sky-200 px-2 py-0.5 rounded border border-slate-700 transition cursor-pointer"
-                            >
-                              + {chip}
-                            </button>
-                          ))}
-                        </div>
+                        {/* Quick Chips for Bank & E-Wallet Notes (Toggled via Admin Setting) */}
+                        {showBankQuickChips && (
+                          <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                            {['Transfer BCA', 'Transfer BRI', 'Transfer Mandiri', 'QRIS GoPay', 'QRIS ShopeePay'].map(chip => (
+                              <button
+                                key={chip}
+                                type="button"
+                                onClick={() => {
+                                  if (!paymentNotes) setPaymentNotes(chip);
+                                  else if (!paymentNotes.includes(chip)) setPaymentNotes(`${chip} - ${paymentNotes}`);
+                                }}
+                                className="text-[10px] bg-slate-800 hover:bg-slate-700 text-sky-200 px-2 py-0.5 rounded border border-slate-700 transition cursor-pointer"
+                              >
+                                + {chip}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -3905,18 +3913,19 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   </div>
                 </div>
 
-                  {/* Checkout Button */}
+                  {/* Checkout Button with 1cm gap above & bright eye-catching colors */}
                   <button
                     disabled={cart.length === 0 || numericPaid < totalAmount}
                     onClick={handleCheckout}
-                    className={`w-full py-4 rounded-xl font-black text-base shadow-lg flex items-center justify-center space-x-2 transition border-2 ${
+                    style={{ marginTop: '1cm' }}
+                    className={`w-full py-4 sm:py-4.5 px-4 rounded-2xl font-black text-lg sm:text-xl shadow-2xl flex items-center justify-center space-x-2.5 transition-all border-4 ${
                       cart.length === 0 || numericPaid < totalAmount
                         ? 'bg-slate-300 text-slate-700 border-slate-400 cursor-not-allowed shadow-none'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-800 shadow-emerald-200 cursor-pointer active:scale-98'
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-amber-300 ring-4 ring-emerald-400/60 shadow-emerald-500/50 cursor-pointer active:scale-98 tracking-wide animate-bounce'
                     }`}
                   >
-                    <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
-                    <span>Selesaikan Transaksi & Bayar</span>
+                    <CheckCircle2 className="w-7 h-7 stroke-[3] text-slate-950 shrink-0" />
+                    <span>Bayar dan Transaksi Selesai</span>
                   </button>
                 </div>
               </div>
@@ -4067,8 +4076,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 </p>
               </div>
 
-              {/* Action Buttons: 1. Big "Tambah Barang / Jasa Baru", 2. Small Export/Import CSV */}
-              <div className="flex flex-col gap-2 w-full md:w-auto max-w-full overflow-hidden">
+              {/* Action Buttons: 1. Big "Tambah Barang / Jasa Baru", 2. Export CSV & Import CSV side by side */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto max-w-full overflow-hidden">
                 <button
                   onClick={() => {
                     setEditingProductId(null);
@@ -4076,25 +4085,25 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     setIsModalScanning(false);
                     setProductModalOpen(true);
                   }}
-                  className="w-full bg-rose-600 hover:bg-rose-700 text-white px-4 py-3 rounded-xl font-black text-sm sm:text-base shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                  className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-3 rounded-xl font-black text-sm sm:text-base shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                 >
                   <Plus className="w-5 h-5 stroke-[3]" />
                   <span>Tambah Barang / Jasa Baru</span>
                 </button>
 
-                <div className="flex items-center gap-2 w-full">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={exportProductsToCSV}
-                    className="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 sm:flex-none bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Download className="w-4 h-4" />
                     <span>Export CSV</span>
                   </button>
                   <button
                     onClick={() => setImportModalOpen(true)}
-                    className="flex-1 bg-indigo-700 hover:bg-indigo-800 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 sm:flex-none bg-indigo-700 hover:bg-indigo-800 text-white px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Upload className="w-4 h-4" />
+                    <Upload className="w-4 h-4 text-white" />
                     <span>Import CSV</span>
                   </button>
                 </div>
@@ -5956,6 +5965,118 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 >
                   Tes Warning (12%)
                 </button>
+              </div>
+            </div>
+
+            {/* 6. Pengaturan Tombol Pintas Catatan Bank & E-Wallet */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Banknote className="w-5 h-5 text-indigo-600" />
+                  <span>Tombol Pintas Catatan Bank & E-Wallet (QRIS / Transfer)</span>
+                </h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Atur keberadaan tombol pintas (+ Transfer BCA, + Transfer BRI, + Transfer Mandiri, + QRIS GoPay, + QRIS ShopeePay) di panel pembayaran POS.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 p-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl cursor-pointer hover:border-slate-300 transition select-none">
+                  <input
+                    type="checkbox"
+                    checked={showBankQuickChips}
+                    onChange={(e) => {
+                      setShowBankQuickChips(e.target.checked);
+                      localStorage.setItem('tokobazar_show_quick_chips', String(e.target.checked));
+                      showAlert(e.target.checked ? '✓ Tombol pintas Bank & E-Wallet DIAKTIFKAN di kasir' : 'ℹ️ Tombol pintas Bank & E-Wallet DISEMBUNYIKAN dari kasir', 'info');
+                    }}
+                    className="w-5 h-5 mt-0.5 accent-rose-600 cursor-pointer rounded shrink-0"
+                  />
+                  <div>
+                    <span className="font-bold text-sm text-slate-900 block">
+                      Tampilkan Tombol Cepat Bank & E-Wallet di Panel Kasir POS
+                    </span>
+                    <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                      Memudahkan kasir menempelkan teks "+ Transfer BCA", "+ Transfer BRI", "+ Transfer Mandiri", "+ QRIS GoPay", dll ke catatan transaksi hanya dengan 1 kali ketuk.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* 7. Pengaturan Margin & Lebar Layar Smartphone */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Smartphone className="w-5 h-5 text-rose-600" />
+                  <span>Margin & Lebar Tampilan Layar Smartphone</span>
+                </h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Pilih gaya margin samping pada layar HP yang sempit agar ruang kerja kasir maksimal atau rapi.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Mode 1: Default Margin */}
+                <div
+                  onClick={() => {
+                    setMobileMarginMode('default');
+                    localStorage.setItem('tokobazar_mobile_margin_mode', 'default');
+                    showAlert('Mode tampilan diset ke: Default Margin (Dengan Padding Samping)', 'info');
+                  }}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition flex items-start space-x-3 select-none ${
+                    mobileMarginMode === 'default'
+                      ? 'border-rose-600 bg-rose-50/70 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300 bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="mobileMarginSetting"
+                    checked={mobileMarginMode === 'default'}
+                    onChange={() => {}}
+                    className="mt-1 text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <div className="font-bold text-sm text-slate-900">
+                      📱 Default Margin (Dengan Jarak Samping)
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      Tampilan standar rapi dengan ruang jarak (padding) di batas kiri dan kanan layar HP.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Mode 2: Max-Width / Tanpa Margin Samping */}
+                <div
+                  onClick={() => {
+                    setMobileMarginMode('max_width');
+                    localStorage.setItem('tokobazar_mobile_margin_mode', 'max_width');
+                    showAlert('Mode tampilan diset ke: Maksimal / Tanpa Margin Samping (Rapat Penuh Layar HP)', 'info');
+                  }}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition flex items-start space-x-3 select-none ${
+                    mobileMarginMode === 'max_width'
+                      ? 'border-rose-600 bg-rose-50/70 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300 bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="mobileMarginSetting"
+                    checked={mobileMarginMode === 'max_width'}
+                    onChange={() => {}}
+                    className="mt-1 text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <div className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                      <span>🖥️ Maksimal / Tanpa Margin Samping</span>
+                      <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.5 rounded">Rapat HP</span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      Memaksimalkan seluruh area layar HP secara penuh tanpa margin samping (rapat penuh ke tepi kanan & kiri HP).
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
