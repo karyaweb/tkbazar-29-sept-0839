@@ -2865,7 +2865,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
       </header>
 
       {/* Main Container */}
-      <main className={`flex-1 max-w-7xl w-full mx-auto ${mobileMarginMode === 'max_width' ? 'px-1 sm:px-2 py-2 md:p-6' : 'p-4 md:p-6'}`}>
+      <main className={`flex-1 max-w-7xl w-full mx-auto transition-all ${mobileMarginMode === 'max_width' ? 'px-0 py-1 sm:px-2 py-2 md:p-6' : 'p-3.5 sm:p-4 md:p-6'}`}>
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center justify-between">
             <div className="flex items-center space-x-2">
