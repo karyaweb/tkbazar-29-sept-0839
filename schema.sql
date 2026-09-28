@@ -60,3 +60,7 @@ INSERT OR IGNORE INTO products (barcode, name, price) VALUES
 ('8991112223344', 'Telur Ayam Negeri 1 Kg', 28000),
 ('8993334445566', 'Teh Botol Sosro 450ml', 4500),
 ('8997778889900', 'Chitato Snack Sapi Panggang 68g', 10500);
+
+-- Perintah Migrasi Kolom untuk Database Cloudflare D1 yang Sudah Berjalan Sebelumnya:
+-- ALTER TABLE transactions ADD COLUMN payment_method TEXT DEFAULT 'TUNAI';
+-- ALTER TABLE transactions ADD COLUMN notes TEXT DEFAULT '';

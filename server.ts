@@ -354,7 +354,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // Bootstrap API (ensures database structure and initial seed items)
+  // Bootstrap API (ensures database structure, QRIS fields, and initial seed items)
   app.post('/api/bootstrap', (_req, res) => {
     const db = loadDb();
     let seeded = false;
@@ -366,10 +366,20 @@ async function startServer() {
       db.products = getInitialData().products;
       seeded = true;
     }
+    if (db.transactions) {
+      db.transactions.forEach(tx => {
+        if (!tx.payment_method) {
+          tx.payment_method = 'TUNAI';
+        }
+        if (tx.notes === undefined) {
+          tx.notes = '';
+        }
+      });
+    }
     saveDb(db);
     res.json({
       success: true,
-      message: 'Database berhasil di-bootstrap dengan tabel user & produk!',
+      message: 'Database berhasil di-bootstrap dengan tabel user, produk, serta kolom QRIS & Catatan!',
       seeded
     });
   });
