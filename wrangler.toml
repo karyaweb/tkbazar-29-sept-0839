@@ -2,7 +2,10 @@ name = "tokobazar"
 compatibility_date = "2024-03-20"
 pages_build_output_dir = "dist"
 
-[env.production.d1_databases]
+ 
+ 
+
+[[env.production.d1_databases]]
 binding = "DB"
 database_name = "tokobazar-db"
 database_id = "8df1343c-a680-4588-adf6-afcb5f9f55f6"
