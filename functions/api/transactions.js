@@ -82,6 +82,7 @@ export async function onRequestPost(context) {
       subtotal_amount,
       discount_amount,
       tax_amount,
+      admin_fee_amount,
       total_amount,
       paid_amount,
       change_amount,
@@ -104,13 +105,14 @@ export async function onRequestPost(context) {
     // Insert into transactions
     await db.prepare(`
       INSERT INTO transactions (
-        invoice_no, subtotal_amount, discount_amount, tax_amount, total_amount, paid_amount, change_amount, cashier_name, payment_method, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        invoice_no, subtotal_amount, discount_amount, tax_amount, admin_fee_amount, total_amount, paid_amount, change_amount, cashier_name, payment_method, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       invoice_no,
       subtotal_amount || 0,
       discount_amount || 0,
       tax_amount || 0,
+      admin_fee_amount || 0,
       total_amount,
       paid_amount,
       change_amount,
@@ -143,6 +145,7 @@ export async function onRequestPost(context) {
         subtotal_amount,
         discount_amount,
         tax_amount,
+        admin_fee_amount: admin_fee_amount || 0,
         total_amount,
         paid_amount,
         change_amount,

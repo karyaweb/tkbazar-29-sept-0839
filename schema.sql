@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     subtotal_amount REAL,
     discount_amount REAL,
     tax_amount REAL,
+    admin_fee_amount REAL DEFAULT 0,
     total_amount REAL NOT NULL,
     paid_amount REAL NOT NULL,
     change_amount REAL NOT NULL,
@@ -41,6 +42,15 @@ CREATE TABLE IF NOT EXISTS transaction_items (
     quantity INTEGER NOT NULL,
     subtotal REAL NOT NULL,
     FOREIGN KEY (invoice_no) REFERENCES transactions(invoice_no)
+);
+
+CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cashier_name TEXT NOT NULL,
+    category TEXT NOT NULL, -- 'Uang Sampah', 'Listrik / Air', 'Makan & Minum', 'Donasi', 'Prive Tunai', 'Operasional Toko', 'Lainnya'
+    amount REAL NOT NULL,
+    notes TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Seed Data User Default

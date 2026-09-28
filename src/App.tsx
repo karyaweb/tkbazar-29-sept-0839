@@ -64,7 +64,13 @@ import {
   ShieldAlert,
   EyeOff,
   QrCode,
-  Banknote
+  Banknote,
+  Wallet,
+  Coins,
+  Coffee,
+  Lightbulb,
+  HeartHandshake,
+  TrendingDown
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import html2canvas from 'html2canvas';
@@ -98,6 +104,7 @@ interface Transaction {
   tax_amount?: number;
   tax_type?: 'rp' | 'pct';
   tax_value?: string;
+  admin_fee_amount?: number;
   total_amount: number;
   paid_amount: number;
   change_amount: number;
@@ -108,8 +115,17 @@ interface Transaction {
   items: TransactionItem[];
 }
 
+interface Expense {
+  id: number;
+  cashier_name: string;
+  category: string;
+  amount: number;
+  notes: string;
+  created_at: string;
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'pos' | 'catalog' | 'products' | 'top-selling' | 'history' | 'settings' | 'cloudflare'>('pos');
+  const [activeTab, setActiveTab] = useState<'pos' | 'catalog' | 'products' | 'top-selling' | 'history' | 'expenses' | 'settings' | 'cloudflare'>('pos');
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -214,6 +230,20 @@ export default function App() {
   const [paymentMethod, setPaymentMethod] = useState<'TUNAI' | 'QRIS'>('TUNAI');
   const [paymentNotes, setPaymentNotes] = useState<string>('');
 
+  // Admin Fee State (Biaya Admin QRIS / Transfer Bank / Titipan - Pendapatan Toko, Tanpa Kembalian Pelanggan)
+  const [adminFeeAmount, setAdminFeeAmount] = useState<number>(0);
+
+  // Store Cash Expenses State (Pengeluaran Kas Toko: Sampah, Listrik, Makan, Donasi, Prive, dll)
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenseModalOpen, setExpenseModalOpen] = useState<boolean>(false);
+  const [expenseCategory, setExpenseCategory] = useState<string>('Uang Sampah');
+  const [expenseAmount, setExpenseAmount] = useState<string>('');
+  const [expenseNotes, setExpenseNotes] = useState<string>('');
+  const [expenseSubmitting, setExpenseSubmitting] = useState<boolean>(false);
+  const [expensePeriodFilter, setExpensePeriodFilter] = useState<string>('today_yesterday');
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState<string>('all');
+  const [expenseSearch, setExpenseSearch] = useState<string>('');
+
   // Virtual Numpad State
   const [numpadOpen, setNumpadOpen] = useState<boolean>(false);
   const [discountType, setDiscountType] = useState<'rp' | 'pct'>('rp');
@@ -289,7 +319,7 @@ export default function App() {
   // Handle Tab Switch with RBAC protection for KASIR
   const handleTabChange = (tab: string) => {
     if (currentUser?.role === 'KASIR' && ['products', 'top-selling', 'settings', 'cloudflare'].includes(tab)) {
-      showAlert('🔒 AKSES DIBATASI KHUSUS ADMIN!\nKasir hanya dapat mengakses Kasir (Hitung), Katalog Produk, dan Riwayat Transaksi.', 'error');
+      showAlert('🔒 AKSES DIBATASI KHUSUS ADMIN!\nKasir hanya dapat mengakses Kasir (Hitung), Katalog Produk, Riwayat Transaksi, dan Pengeluaran Kas Toko.', 'error');
       return;
     }
     setActiveTab(tab as any);
@@ -715,9 +745,28 @@ export default function App() {
     }
   };
 
+  // Fetch Cash Expenses (Pengeluaran Kas Toko)
+  const fetchExpenses = async () => {
+    try {
+      if (!navigator.onLine) throw new Error('Offline');
+      const res = await fetch('/api/expenses');
+      if (res.ok) {
+        const data = await res.json();
+        setExpenses(data);
+        localStorage.setItem('tokobazar_offline_expenses', JSON.stringify(data));
+      }
+    } catch {
+      const cached = localStorage.getItem('tokobazar_offline_expenses');
+      if (cached) {
+        try { setExpenses(JSON.parse(cached)); } catch {}
+      }
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
     fetchTransactions();
+    fetchExpenses();
   }, []);
 
   // Audio Beep Effect on Barcode Scan
@@ -1098,34 +1147,54 @@ export default function App() {
     setPaymentNotes('');
     setShowDiscountSection(false);
     setShowTaxSection(false);
+    setAdminFeeAmount(0);
     triggerTotalHighlight('Keranjang dikosongkan');
   };
 
   // Calculations
   const subtotalAmount = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
 
-  // Discount calculation
+  // Discount calculation (Biaya Diskon: Mengurangi Pemasukan Toko)
   const numericDiscountInput = parseFloat(discountValue) || 0;
   const discountAmount = discountType === 'rp'
     ? Math.min(numericDiscountInput, subtotalAmount)
     : Math.min((subtotalAmount * numericDiscountInput) / 100, subtotalAmount);
 
-  // Tax / Biaya Tambahan calculation (from total brutto / subtotal)
+  // Tax / Biaya Tambahan calculation (Pemasukan Pemungutan Pajak: Menambah Pendapatan Toko)
   const numericTaxInput = parseFloat(taxValue) || 0;
   const taxAmount = taxType === 'rp'
     ? Math.max(0, numericTaxInput)
     : Math.max(0, (subtotalAmount * numericTaxInput) / 100);
 
-  const totalAmount = Math.max(0, subtotalAmount - discountAmount + taxAmount);
-  const numericPaid = parseFloat(paidAmount) || 0;
-  const changeAmount = numericPaid - totalAmount;
+  // Total Belanja sebelum Biaya Admin
+  const netItemsAmount = Math.max(0, subtotalAmount - discountAmount + taxAmount);
 
-  // Auto-fill paid amount when initially switching to QRIS
+  // Biaya Admin:
+  // MOHON DIINGAT: TIDAK MENYEBABKAN ADANYA KEMBALIAN PELANGGAN.
+  // Biaya Admin direlakan customer untuk toko, dicatat sebagai akun Pemasukan Biaya Admin di database.
+  const numericPaid = parseFloat(paidAmount) || 0;
+  const effectiveAdminFee = adminFeeAmount > 0
+    ? adminFeeAmount
+    : (paymentMethod === 'QRIS' && numericPaid > netItemsAmount ? (numericPaid - netItemsAmount) : 0);
+
+  const totalAmount = Math.max(0, netItemsAmount + effectiveAdminFee);
+
+  // Kembalian Pelanggan:
+  // Untuk QRIS / Transfer: SELALU 0 (Non-Tunai).
+  // Untuk Tunai: numericPaid - totalAmount.
+  // Karena totalAmount sudah mencakup Biaya Admin, pembayaran pas (misal 10.000 + admin 500 = 10.500 dibayar 10.500)
+  // TIDAK MENYEBABKAN KEMBALIAN (kembalian = 0)!
+  const changeAmount = paymentMethod === 'QRIS'
+    ? 0
+    : (numericPaid >= totalAmount ? numericPaid - totalAmount : numericPaid - totalAmount);
+
+  // Auto-fill paid amount when initially switching to QRIS or total changes
   const prevPaymentMethodRef = useRef<'TUNAI' | 'QRIS'>(paymentMethod);
   useEffect(() => {
-    if (paymentMethod === 'QRIS' && prevPaymentMethodRef.current !== 'QRIS') {
-      // User switched from Tunai to QRIS: pre-fill with totalAmount as a convenient baseline
-      setPaidAmount(String(totalAmount));
+    if (paymentMethod === 'QRIS') {
+      if (prevPaymentMethodRef.current !== 'QRIS' || !paidAmount || Number(paidAmount) < totalAmount) {
+        setPaidAmount(String(totalAmount));
+      }
     }
     prevPaymentMethodRef.current = paymentMethod;
   }, [paymentMethod, totalAmount]);
@@ -1139,16 +1208,31 @@ export default function App() {
     }
   };
 
-  const handleAddQrisFee = (fee: number) => {
-    const base = (numericPaid > 0 && numericPaid >= totalAmount) ? numericPaid : totalAmount;
-    const newPaid = base + fee;
-    setPaidAmount(String(newPaid));
-    const feeStr = `Rp ${fee.toLocaleString('id-ID')}`;
+  const handleAddAdminFee = (fee: number) => {
+    const newFee = adminFeeAmount + fee;
+    setAdminFeeAmount(newFee);
+    const feeStr = `Rp ${newFee.toLocaleString('id-ID')}`;
+    const feeNotice = `(Admin ${feeStr})`;
     if (!paymentNotes || paymentNotes.trim() === '') {
-      setPaymentNotes(`Termasuk biaya admin/transfer ${feeStr}`);
-    } else if (!paymentNotes.toLowerCase().includes('admin') && !paymentNotes.toLowerCase().includes('biaya')) {
-      setPaymentNotes(`${paymentNotes} (Admin ${feeStr})`);
+      setPaymentNotes(feeNotice);
+    } else if (paymentNotes.includes('(Admin Rp')) {
+      setPaymentNotes(paymentNotes.replace(/\(Admin Rp [^\)]+\)/, feeNotice));
+    } else {
+      setPaymentNotes(`${paymentNotes} ${feeNotice}`);
     }
+    const newTotal = Math.max(0, netItemsAmount + newFee);
+    setPaidAmount(String(newTotal));
+    showAlert(`⚡ Biaya Admin Rp ${fee.toLocaleString('id-ID')} ditambahkan (Pendapatan Toko, Tanpa Kembalian Pelanggan)`, 'info');
+  };
+
+  const handleResetAdminFee = () => {
+    setAdminFeeAmount(0);
+    const newTotal = Math.max(0, netItemsAmount);
+    setPaidAmount(String(newTotal));
+    if (paymentNotes) {
+      setPaymentNotes(paymentNotes.replace(/\(Admin Rp [^\)]+\)/, '').trim());
+    }
+    showAlert('Biaya Admin direset ke Rp 0', 'info');
   };
 
   const quickCashOptions = [5000, 10000, 15000, 20000, 25000, 50000, 75000, 100000, 200000];
@@ -1168,12 +1252,13 @@ export default function App() {
       subtotal_amount: subtotalAmount,
       discount_amount: discountAmount,
       tax_amount: taxAmount,
+      admin_fee_amount: effectiveAdminFee,
       tax_type: taxType,
       tax_value: taxValue,
       total_amount: totalAmount,
       paid_amount: numericPaid,
       change_amount: changeAmount,
-      cashier_name: cashierName,
+      cashier_name: currentUser?.name || cashierName,
       payment_method: paymentMethod,
       notes: paymentNotes,
       created_at: new Date().toISOString(),
@@ -1237,6 +1322,111 @@ export default function App() {
         showAlert('Terjadi kesalahan koneksi server', 'error');
       }
     }
+  };
+
+  // Cash Expenses Handlers (Pengeluaran Kas Toko: Sampah, Listrik, Makan, Donasi, Prive, dll)
+  const handleSaveExpense = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanAmt = parseFloat(expenseAmount.replace(/[^0-9]/g, '')) || 0;
+    if (cleanAmt <= 0) {
+      showAlert('Nominal pengeluaran wajib diisi lebih dari Rp 0!', 'error');
+      return;
+    }
+    if (!expenseCategory || expenseCategory.trim() === '') {
+      showAlert('Pilih kategori pengeluaran kas!', 'error');
+      return;
+    }
+
+    setExpenseSubmitting(true);
+    const activeCashier = currentUser?.name || cashierName || 'Kasir Utama';
+    const payload = {
+      cashier_name: activeCashier,
+      category: expenseCategory,
+      amount: cleanAmt,
+      notes: expenseNotes.trim()
+    };
+
+    try {
+      if (!navigator.onLine) {
+        const offlineExp: Expense = {
+          id: Date.now(),
+          cashier_name: activeCashier,
+          category: expenseCategory,
+          amount: cleanAmt,
+          notes: expenseNotes.trim(),
+          created_at: new Date().toISOString()
+        };
+        const updated = [offlineExp, ...expenses];
+        setExpenses(updated);
+        localStorage.setItem('tokobazar_offline_expenses', JSON.stringify(updated));
+        showAlert(`✅ Pengeluaran kas ${formatRupiah(cleanAmt)} dicatat (Mode Offline)!`, 'success');
+        setExpenseAmount('');
+        setExpenseNotes('');
+        setExpenseModalOpen(false);
+        return;
+      }
+
+      const res = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const updated = [data.expense, ...expenses];
+        setExpenses(updated);
+        localStorage.setItem('tokobazar_offline_expenses', JSON.stringify(updated));
+        showAlert(`✅ Pengeluaran kas ${formatRupiah(cleanAmt)} (${expenseCategory}) berhasil dicatat oleh ${activeCashier}!`, 'success');
+        setExpenseAmount('');
+        setExpenseNotes('');
+        setExpenseModalOpen(false);
+      } else {
+        throw new Error(data.error || 'Gagal mencatat pengeluaran kas');
+      }
+    } catch (err: any) {
+      showAlert(`Gagal menyimpan pengeluaran: ${err.message}`, 'error');
+    } finally {
+      setExpenseSubmitting(false);
+    }
+  };
+
+  const handleDeleteExpense = async (id: number) => {
+    if (!window.confirm('Yakin ingin membatalkan/menghapus catatan pengeluaran kas ini?')) return;
+    try {
+      if (navigator.onLine) {
+        await fetch(`/api/expenses?id=${id}`, { method: 'DELETE' });
+      }
+      const updated = expenses.filter(e => e.id !== id);
+      setExpenses(updated);
+      localStorage.setItem('tokobazar_offline_expenses', JSON.stringify(updated));
+      showAlert('Catatan pengeluaran kas berhasil dihapus.', 'info');
+    } catch (err: any) {
+      showAlert('Gagal menghapus pengeluaran: ' + err.message, 'error');
+    }
+  };
+
+  const exportExpensesToCSV = () => {
+    if (expenses.length === 0) {
+      showAlert('Tidak ada data pengeluaran kas untuk diexport.', 'info');
+      return;
+    }
+    const headers = ['ID', 'Tanggal & Waktu', 'Kasir Bertugas', 'Kategori Pengeluaran', 'Nominal (Rp)', 'Keterangan'];
+    const rows = expenses.map(e => [
+      e.id,
+      `"${new Date(e.created_at).toLocaleString('id-ID')}"`,
+      `"${e.cashier_name}"`,
+      `"${e.category}"`,
+      e.amount,
+      `"${(e.notes || '').replace(/"/g, '""')}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const link = document.createElement('a');
+    link.setAttribute('href', encodeURI(csvContent));
+    link.setAttribute('download', `pengeluaran_kas_${todayDateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showAlert('✅ File CSV Pengeluaran Kas berhasil didownload!', 'success');
   };
 
   // Product Save
@@ -1516,6 +1706,16 @@ export default function App() {
       y += 20;
     }
 
+    if (tx.admin_fee_amount && tx.admin_fee_amount > 0) {
+      ctx.font = '13px sans-serif';
+      ctx.fillStyle = '#b45309';
+      ctx.fillText(`Biaya Admin Toko`, 25, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`+${formatRupiah(tx.admin_fee_amount)}`, width - 25, y);
+      ctx.textAlign = 'left';
+      y += 20;
+    }
+
     // TOTAL
     ctx.font = 'bold 17px sans-serif';
     ctx.fillStyle = '#0f172a';
@@ -1769,11 +1969,12 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 escpos += ` ${i.quantity} x ${formatRupiah(i.price)} = ${formatRupiah(i.subtotal)}\n`;
               });
               escpos += divider;
-              if (tx.subtotal_amount && (tx.discount_amount || tx.tax_amount)) {
+              if (tx.subtotal_amount && (tx.discount_amount || tx.tax_amount || tx.admin_fee_amount)) {
                 escpos += `Subtotal : ${formatRupiah(tx.subtotal_amount)}\n`;
               }
               if (tx.discount_amount) escpos += `Diskon   : -${formatRupiah(tx.discount_amount)}\n`;
               if (tx.tax_amount) escpos += `Pajak    : +${formatRupiah(tx.tax_amount)}\n`;
+              if (tx.admin_fee_amount) escpos += `Biaya Adm: +${formatRupiah(tx.admin_fee_amount)}\n`;
               escpos += `TOTAL    : ${formatRupiah(tx.total_amount)}\n`;
               if ((tx.payment_method || '').toUpperCase() === 'QRIS') {
                 escpos += `Metode   : QRIS/Transfer Bank\n`;
@@ -1834,14 +2035,23 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayDateStr = getLocalDateString(yesterday);
 
-  // Daily Sales Summary calculations (Hari Ini)
+  // Daily Sales & Expenses calculations (Hari Ini)
   const todayTransactions = transactions.filter(t => getLocalDateString(new Date(t.created_at)) === todayDateStr);
-  const todayRevenue = todayTransactions.reduce((sum, t) => sum + (t.paid_amount || t.total_amount), 0);
+  const todayExpenses = expenses.filter(e => getLocalDateString(new Date(e.created_at)) === todayDateStr);
+  const todayTotalExpenses = todayExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+  const todaySubtotal = todayTransactions.reduce((sum, t) => sum + (t.subtotal_amount || t.items.reduce((s, i) => s + i.subtotal, 0)), 0);
+  const todayDiscounts = todayTransactions.reduce((sum, t) => sum + (t.discount_amount || 0), 0);
+  const todayTaxes = todayTransactions.reduce((sum, t) => sum + (t.tax_amount || 0), 0);
+  const todayAdminFees = todayTransactions.reduce((sum, t) => sum + (t.admin_fee_amount || (t.paid_amount > t.total_amount ? t.paid_amount - t.total_amount : 0)), 0);
+  const todayRevenue = todayTransactions.reduce((sum, t) => sum + t.total_amount, 0);
   const todayItemsCount = todayTransactions.reduce((sum, t) => sum + t.items.reduce((s, i) => s + i.quantity, 0), 0);
   const todayCashTransactions = todayTransactions.filter(t => (t.payment_method || 'TUNAI').toUpperCase() !== 'QRIS');
   const todayQrisTransactions = todayTransactions.filter(t => (t.payment_method || '').toUpperCase() === 'QRIS');
   const todayCashRevenue = todayCashTransactions.reduce((sum, t) => sum + t.total_amount, 0);
   const todayQrisRevenue = todayQrisTransactions.reduce((sum, t) => sum + (t.paid_amount || t.total_amount), 0);
+  const todayNetRevenue = todayRevenue - todayTotalExpenses;
+  const todayCashInDrawer = todayCashRevenue - todayTotalExpenses;
 
   // Advanced Report Filtering (Default: Hari Ini & Kemarin)
   const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -1883,6 +2093,37 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
     return true;
   });
 
+  // Period Expenses matching the date filter
+  const periodExpenses = expenses.filter(e => {
+    const eDate = new Date(e.created_at);
+    const eDateStr = getLocalDateString(eDate);
+    const diffTime = now.getTime() - eDate.getTime();
+    const diffDays = diffTime / (1000 * 3600 * 24);
+
+    if (reportPeriod === 'today_yesterday') {
+      return eDateStr === todayDateStr || eDateStr === yesterdayDateStr;
+    } else if (reportPeriod === 'today') {
+      return eDateStr === todayDateStr;
+    } else if (reportPeriod === 'yesterday') {
+      return eDateStr === yesterdayDateStr;
+    } else if (reportPeriod === 'all') {
+      return true;
+    } else if (reportPeriod.startsWith('month_')) {
+      const monthIdx = parseInt(reportPeriod.split('_')[1], 10);
+      return eDate.getMonth() === monthIdx && eDate.getFullYear() === now.getFullYear();
+    } else {
+      const days = parseInt(reportPeriod, 10);
+      return diffDays <= days;
+    }
+  });
+
+  const periodTotalExpenses = periodExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+  const periodSubtotal = basePeriodTransactions.reduce((sum, t) => sum + (t.subtotal_amount || t.items.reduce((s, i) => s + i.subtotal, 0)), 0);
+  const periodDiscounts = basePeriodTransactions.reduce((sum, t) => sum + (t.discount_amount || 0), 0);
+  const periodTaxes = basePeriodTransactions.reduce((sum, t) => sum + (t.tax_amount || 0), 0);
+  const periodAdminFees = basePeriodTransactions.reduce((sum, t) => sum + (t.admin_fee_amount || (t.paid_amount > t.total_amount ? t.paid_amount - t.total_amount : 0)), 0);
+
   // Period Cash vs QRIS Revenue Breakdown (including any admin fee paid to bank account)
   const periodCashTransactions = basePeriodTransactions.filter(
     t => (t.payment_method || 'TUNAI').toUpperCase() !== 'QRIS'
@@ -1891,10 +2132,16 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
     t => (t.payment_method || '').toUpperCase() === 'QRIS'
   );
 
-  const periodRevenue = basePeriodTransactions.reduce((sum, t) => sum + (t.paid_amount || t.total_amount), 0);
+  const periodRevenue = basePeriodTransactions.reduce((sum, t) => sum + t.total_amount, 0);
   const periodCashRevenue = periodCashTransactions.reduce((sum, t) => sum + t.total_amount, 0);
   const periodQrisRevenue = periodQrisTransactions.reduce((sum, t) => sum + (t.paid_amount || t.total_amount), 0);
   const periodItemsCount = basePeriodTransactions.reduce((sum, t) => sum + t.items.reduce((s, i) => s + i.quantity, 0), 0);
+
+  // Pemasukan Bersih Toko (Net Income = Total Omset - Total Pengeluaran Kas Toko)
+  const periodNetRevenue = periodRevenue - periodTotalExpenses;
+
+  // Sisa Saldo Uang Fisik di Laci Kasir (Cash in Drawer = Uang Tunai Masuk - Total Pengeluaran Kas Tunai)
+  const periodCashInDrawer = periodCashRevenue - periodTotalExpenses;
 
   // Filtered transactions for the list view with optional payment method sub-filter
   const filteredTransactions = basePeriodTransactions.filter(tx => {
@@ -1982,6 +2229,44 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
   const topTotalUnits = Array.from(topItemMap.values()).reduce((sum, p) => sum + p.qty, 0);
   const topTotalRevenue = Array.from(topItemMap.values()).reduce((sum, p) => sum + p.revenue, 0);
   const maxTopQty = topProductsList.length > 0 ? Math.max(...topProductsList.map(p => p.qty)) : 1;
+
+  // Filtered Expenses for the dedicated Expenses Tab
+  const filteredExpensesList = expenses.filter(e => {
+    const eDate = new Date(e.created_at);
+    const eDateStr = getLocalDateString(eDate);
+    const diffTime = now.getTime() - eDate.getTime();
+    const diffDays = diffTime / (1000 * 3600 * 24);
+
+    if (expensePeriodFilter === 'today_yesterday') {
+      if (eDateStr !== todayDateStr && eDateStr !== yesterdayDateStr) return false;
+    } else if (expensePeriodFilter === 'today') {
+      if (eDateStr !== todayDateStr) return false;
+    } else if (expensePeriodFilter === 'yesterday') {
+      if (eDateStr !== yesterdayDateStr) return false;
+    } else if (expensePeriodFilter === '7') {
+      if (diffDays > 7) return false;
+    } else if (expensePeriodFilter === '30') {
+      if (diffDays > 30) return false;
+    } else if (expensePeriodFilter === 'all') {
+      // all pass
+    }
+
+    if (expenseCategoryFilter !== 'all' && e.category !== expenseCategoryFilter) {
+      return false;
+    }
+
+    if (expenseSearch.trim()) {
+      const q = expenseSearch.toLowerCase();
+      const matchNotes = (e.notes || '').toLowerCase().includes(q);
+      const matchCashier = (e.cashier_name || '').toLowerCase().includes(q);
+      const matchCategory = (e.category || '').toLowerCase().includes(q);
+      if (!matchNotes && !matchCashier && !matchCategory) return false;
+    }
+
+    return true;
+  });
+
+  const filteredExpensesTotal = filteredExpensesList.reduce((sum, e) => sum + e.amount, 0);
 
   // Export Top Sold Products to CSV
   const exportTopSoldToCSV = () => {
@@ -2275,6 +2560,17 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               )}
             </button>
 
+            {/* Quick Record Cash Expense Button */}
+            <button
+              onClick={() => setExpenseModalOpen(true)}
+              className="flex items-center space-x-1.5 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all shadow-sm border-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border-rose-700/80 cursor-pointer"
+              title="Catat Pengeluaran Kas Toko (Uang Sampah, Listrik, Makan, Donasi, Prive, dll)"
+            >
+              <Wallet className="w-4 h-4 text-rose-400 shrink-0" />
+              <span className="hidden sm:inline">Pengeluaran Kas</span>
+              <span className="sm:hidden">Beban</span>
+            </button>
+
             {/* MENU Button */}
             <button
               onClick={() => setMenuDropdownOpen(!menuDropdownOpen)}
@@ -2417,7 +2713,31 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   <ChevronRight className="w-5 h-5 text-slate-400" />
                 </button>
 
-                {/* 5. Pengaturan (Setting) (Blocked for KASIR) */}
+                {/* 5. Pengeluaran Kas Toko (Beban Operasional - DAPAT DIAKSES KASIR & ADMIN) */}
+                <button
+                  onClick={() => handleTabChange('expenses')}
+                  className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
+                    activeTab === 'expenses'
+                      ? 'bg-rose-600 text-white border-rose-400 shadow-md'
+                      : 'bg-slate-800/80 hover:bg-slate-800 text-slate-100 border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2.5 bg-rose-500/20 text-rose-400 rounded-xl">
+                      <Wallet className="w-5 h-5 text-rose-400" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-base flex items-center gap-1.5">
+                        <span>Pengeluaran Kas Toko</span>
+                        <span className="text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.2 rounded-full font-bold">Beban Kas</span>
+                      </div>
+                      <div className="text-xs text-slate-400">Sampah, listrik, makan, donasi, prive (Mengurangi kas)</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400" />
+                </button>
+
+                {/* 6. Pengaturan (Setting) (Blocked for KASIR) */}
                 <button
                   onClick={() => handleTabChange('settings')}
                   className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
@@ -3360,18 +3680,28 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleAddQrisFee(500)}
+                            onClick={() => handleAddAdminFee(500)}
                             className="text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-2.5 py-1.5 rounded-lg border border-amber-300 transition cursor-pointer shadow-xs"
                           >
                             + Rp 500 (Biaya Admin)
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleAddQrisFee(1000)}
+                            onClick={() => handleAddAdminFee(1000)}
                             className="text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-2.5 py-1.5 rounded-lg border border-amber-300 transition cursor-pointer shadow-xs"
                           >
                             + Rp 1.000
                           </button>
+                          {adminFeeAmount > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleResetAdminFee}
+                              className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-bold px-2 py-1.5 rounded-lg border border-rose-400 transition cursor-pointer"
+                              title="Batal Biaya Admin"
+                            >
+                              ✕ Reset Admin
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setNumpadOpen(true)}
@@ -3382,16 +3712,21 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                         </div>
                       </div>
 
-                      {/* Notifikasi Jika Ada Tambahan Biaya Admin / Transfer */}
-                      {numericPaid > totalAmount && (
-                        <div className="bg-sky-950/90 border border-sky-400 p-2.5 rounded-lg flex items-center justify-between text-xs text-sky-100 font-bold">
-                          <span className="flex items-center gap-1.5">
-                            <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
-                            <span>Tambahan Biaya Admin / Transfer:</span>
-                          </span>
-                          <span className="font-mono text-amber-300 font-black text-sm">
-                            +{formatRupiah(numericPaid - totalAmount)}
-                          </span>
+                      {/* Notifikasi Pemasukan Biaya Admin Toko (Tanpa Kembalian Pelanggan) */}
+                      {effectiveAdminFee > 0 && (
+                        <div className="bg-amber-950/90 border-2 border-amber-400 p-2.5 rounded-xl space-y-1 text-white shadow-md animate-modal-pop">
+                          <div className="flex items-center justify-between text-xs font-black text-amber-300">
+                            <span className="flex items-center gap-1.5">
+                              <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span>Pemasukan Biaya Admin Toko:</span>
+                            </span>
+                            <span className="font-mono text-amber-300 font-black text-sm">
+                              +{formatRupiah(effectiveAdminFee)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-amber-100/90 leading-tight">
+                            ✓ Biaya Admin direlakan pelanggan untuk toko, dicatat sebagai akun <strong>Pemasukan Biaya Admin</strong> (<strong>TIDAK MENYEBABKAN ADANYA KEMBALIAN PELANGGAN</strong>).
+                          </p>
                         </div>
                       )}
 
@@ -3472,6 +3807,48 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                           Uang Pas
                         </button>
                       </div>
+
+                      {/* Tombol Biaya Admin & Beban Kas Toko untuk Pembayaran Tunai */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="text-[11px] font-bold text-amber-300">Biaya Admin:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleAddAdminFee(500)}
+                          className="text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-2.5 py-1 rounded-lg border border-amber-300 transition cursor-pointer"
+                        >
+                          + Rp 500 (Admin)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddAdminFee(1000)}
+                          className="text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-2.5 py-1 rounded-lg border border-amber-300 transition cursor-pointer"
+                        >
+                          + Rp 1.000
+                        </button>
+                        {adminFeeAmount > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleResetAdminFee}
+                            className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-bold px-2 py-1 rounded-lg border border-rose-400 transition cursor-pointer"
+                          >
+                            ✕ Reset
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setExpenseModalOpen(true)}
+                          className="text-xs bg-purple-800 hover:bg-purple-700 text-purple-200 font-bold px-2.5 py-1 rounded-lg border border-purple-600 transition ml-auto cursor-pointer flex items-center gap-1"
+                        >
+                          <Wallet className="w-3.5 h-3.5" />
+                          <span>Pengeluaran Kas</span>
+                        </button>
+                      </div>
+
+                      {effectiveAdminFee > 0 && (
+                        <div className="bg-amber-950/80 border border-amber-400/80 p-2 rounded-lg text-[11px] text-amber-200 font-bold flex items-center justify-between">
+                          <span>✓ Biaya Admin: +{formatRupiah(effectiveAdminFee)} (Dicatat Pendapatan Toko, Tanpa Kembalian)</span>
+                        </div>
+                      )}
 
                       <div>
                         <label className="block text-[11px] font-bold text-amber-200 mb-1">Catatan Transaksi Tunai (Opsional)</label>
@@ -4432,6 +4809,135 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               )}
             </div>
 
+            {/* REKAPITULASI AKUN KEUANGAN & LABA BERSIH TOKO (ACCOUNTING BREAKDOWN) */}
+            <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200 p-5 sm:p-6 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full mb-1">
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>Laporan Akuntansi & Arus Kas Toko</span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-slate-900">
+                    Rekapitulasi Akun Keuangan & Laba Bersih ({getReportPeriodLabel()})
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Rincian akun pendapatan (penjualan, biaya admin, pajak), potongan diskon, dan beban pengeluaran kas toko.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpenseModalOpen(true)}
+                  className="bg-rose-600 hover:bg-rose-500 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Catat Pengeluaran Kas</span>
+                </button>
+              </div>
+
+              {/* Table / Grid Breakdown Akun Keuangan */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Kolom Kiri: Akun Pendapatan & Omset Penjualan */}
+                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
+                  <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-emerald-600" />
+                    <span>1. Akun Pendapatan & Omset Penjualan</span>
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center justify-between py-1.5 border-b border-slate-200">
+                      <span className="text-slate-600 font-medium">Penjualan Produk Kotor (Subtotal)</span>
+                      <span className="font-mono font-bold text-slate-900">{formatRupiah(periodSubtotal)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1.5 border-b border-slate-200">
+                      <span className="text-slate-700 font-bold flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                        <span>(+) Pemasukan Biaya Admin Toko</span>
+                      </span>
+                      <span className="font-mono font-black text-amber-600">+{formatRupiah(periodAdminFees)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1.5 border-b border-slate-200">
+                      <span className="text-slate-700 font-medium">(+) Pemasukan Pemungutan Pajak (PPN/PB1)</span>
+                      <span className="font-mono font-bold text-slate-800">+{formatRupiah(periodTaxes)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1.5 border-b border-slate-200">
+                      <span className="text-rose-700 font-medium">(-) Biaya Diskon Toko (Potongan Penjualan)</span>
+                      <span className="font-mono font-bold text-rose-600">-{formatRupiah(periodDiscounts)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 text-sm font-black bg-slate-200/70 p-2.5 rounded-lg border border-slate-300">
+                      <span className="text-slate-900">(=) TOTAL OMSET KOTOR TOKO</span>
+                      <span className="font-mono text-emerald-700">{formatRupiah(periodRevenue)}</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500 italic">
+                    * Biaya Admin (+Rp 500 / +Rp 1.000) yang direlakan customer dicatat langsung ke akun <strong>Pemasukan Biaya Admin</strong> dan tidak menghasilkan kembalian.
+                  </p>
+                </div>
+
+                {/* Kolom Kanan: Akun Beban Pengeluaran Kas & Laba Bersih */}
+                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
+                  <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Wallet className="w-4 h-4 text-rose-600" />
+                    <span>2. Akun Beban Pengeluaran Kas Toko</span>
+                  </h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center justify-between py-1.5 border-b border-slate-200">
+                      <span className="text-slate-600 font-medium">Total Omset Kotor Toko</span>
+                      <span className="font-mono font-bold text-slate-900">{formatRupiah(periodRevenue)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1.5 border-b border-slate-200">
+                      <span className="text-rose-700 font-bold flex items-center gap-1">
+                        <TrendingDown className="w-3.5 h-3.5 text-rose-500" />
+                        <span>(-) Total Beban Pengeluaran Kas Toko</span>
+                      </span>
+                      <span className="font-mono font-black text-rose-600">-{formatRupiah(periodTotalExpenses)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 text-sm font-black bg-emerald-100 p-2.5 rounded-lg border-2 border-emerald-400">
+                      <span className="text-emerald-950">(=) PEMASUKAN BERSIH TOKO (NET)</span>
+                      <span className="font-mono text-emerald-800 text-base">{formatRupiah(periodNetRevenue)}</span>
+                    </div>
+
+                    {/* Sisa Saldo Uang Fisik Kas di Laci */}
+                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-xs">
+                      <div>
+                        <span className="font-black text-amber-900 block flex items-center gap-1">
+                          <Banknote className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Sisa Saldo Kas Fisik di Laci Kasir:</span>
+                        </span>
+                        <span className="text-[10px] text-amber-800">
+                          Uang Fisik ({formatRupiah(periodCashRevenue)}) dikurangi Pengeluaran Kas ({formatRupiah(periodTotalExpenses)})
+                        </span>
+                      </div>
+                      <span className="font-mono font-black text-amber-900 text-sm">
+                        {formatRupiah(periodCashInDrawer)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Kategori Pengeluaran Toko */}
+                  {periodExpenses.length > 0 && (
+                    <div className="pt-1">
+                      <span className="text-[11px] font-bold text-slate-500 block mb-1">Rincian Kategori Pengeluaran Kas Toko:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Array.from(new Set(periodExpenses.map(e => e.category))).map(cat => {
+                          const catTotal = periodExpenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0);
+                          return (
+                            <span key={cat} className="text-[10px] bg-white border border-slate-300 rounded-lg px-2 py-1 text-slate-700 font-medium">
+                              <strong>{cat}</strong>: <span className="text-rose-600 font-bold">{formatRupiah(catTotal)}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Transactions History List */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
@@ -4515,6 +5021,204 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: PENGELUARAN KAS TOKO (BEBAN OPERASIONAL & KAS KELUAR - KASIR & ADMIN) */}
+        {activeTab === 'expenses' && (
+          <div className="space-y-6">
+            {/* Header & Quick Action */}
+            <div className="bg-gradient-to-br from-slate-900 via-rose-950 to-slate-950 rounded-2xl p-6 text-white border-2 border-rose-900/60 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-rose-900/40 pb-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 px-3 py-0.5 rounded-full text-xs font-black mb-1">
+                    <Wallet className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Beban Operasional & Pengeluaran Toko</span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                    Pengeluaran Kas Toko
+                  </h2>
+                  <p className="text-xs text-slate-300 mt-1">
+                    Mencatat pengeluaran uang fisik kasir (uang sampah, biaya listrik, makan/minum, donasi, prive tunai, dll) yang mengurangi pemasukan toko.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExpenseModalOpen(true)}
+                    className="bg-rose-600 hover:bg-rose-500 text-white font-black px-4 py-2.5 rounded-xl shadow-lg transition flex items-center gap-2 text-sm cursor-pointer border border-rose-400"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Catat Pengeluaran Kas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportExpensesToCSV}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-3 py-2.5 rounded-xl border border-slate-700 transition flex items-center gap-1.5 text-xs cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Kasir Bertugas & KPI Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div className="bg-slate-900/90 border border-slate-700 p-3.5 rounded-xl">
+                  <span className="text-[11px] font-bold text-slate-400 block uppercase">Kasir Bertugas Saat Ini</span>
+                  <div className="text-base font-black text-amber-300 flex items-center gap-1.5 mt-0.5">
+                    <User className="w-4 h-4 text-emerald-400" />
+                    <span>{currentUser?.name || cashierName}</span>
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.2 rounded-full font-bold">Otomatis</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">Role: {currentUser?.role || 'KASIR'}</span>
+                </div>
+
+                <div className="bg-rose-950/80 border border-rose-800 p-3.5 rounded-xl">
+                  <span className="text-[11px] font-bold text-rose-300 block uppercase">Total Beban Periode Terpilih</span>
+                  <div className="text-xl font-black text-rose-400 font-mono mt-0.5">
+                    {formatRupiah(filteredExpensesTotal)}
+                  </div>
+                  <span className="text-[10px] text-rose-200/80">{filteredExpensesList.length} Catatan Pengeluaran</span>
+                </div>
+
+                <div className="bg-emerald-950/80 border border-emerald-800 p-3.5 rounded-xl">
+                  <span className="text-[11px] font-bold text-emerald-300 block uppercase">Sisa Fisik di Laci Kasir</span>
+                  <div className="text-xl font-black text-emerald-300 font-mono mt-0.5">
+                    {formatRupiah(periodCashInDrawer)}
+                  </div>
+                  <span className="text-[10px] text-emerald-200/80">Uang Fisik Masuk ({formatRupiah(periodCashRevenue)}) - Pengeluaran</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Controls Filter Pengeluaran */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. Filter Rentang Waktu */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Filter Waktu</label>
+                  <select
+                    value={expensePeriodFilter}
+                    onChange={e => setExpensePeriodFilter(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-bold text-xs focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  >
+                    <option value="today_yesterday">Hari Ini & Kemarin</option>
+                    <option value="today">Hari Ini Saja ({todayDateStr})</option>
+                    <option value="yesterday">Kemarin Saja ({yesterdayDateStr})</option>
+                    <option value="7">7 Hari Terakhir</option>
+                    <option value="30">30 Hari Terakhir</option>
+                    <option value="all">Semua Waktu</option>
+                  </select>
+                </div>
+
+                {/* 2. Filter Kategori */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Kategori Beban</label>
+                  <select
+                    value={expenseCategoryFilter}
+                    onChange={e => setExpenseCategoryFilter(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-bold text-xs focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  >
+                    <option value="all">Semua Kategori</option>
+                    <option value="Uang Sampah">🗑️ Uang Sampah</option>
+                    <option value="Listrik / Air">⚡ Listrik & Air</option>
+                    <option value="Makan & Minum">🍱 Makan & Minum</option>
+                    <option value="Donasi">🤲 Donasi / Sumbangan</option>
+                    <option value="Prive Tunai">💼 Prive Tunai</option>
+                    <option value="Operasional Toko">📦 Operasional Toko</option>
+                    <option value="Lainnya">📝 Lainnya</option>
+                  </select>
+                </div>
+
+                {/* 3. Cari Catatan atau Kasir */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Cari Keterangan / Kasir</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari keterangan / nama kasir..."
+                      value={expenseSearch}
+                      onChange={e => setExpenseSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* List / Table of Expenses */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <span>Daftar Pengeluaran Kas Sesuai Filter</span>
+                  <span className="text-xs bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-bold">
+                    {filteredExpensesList.length} Catatan
+                  </span>
+                </h3>
+                <span className="text-xs font-mono font-bold text-slate-500">
+                  Total: <strong className="text-rose-600 font-mono text-sm">{formatRupiah(filteredExpensesTotal)}</strong>
+                </span>
+              </div>
+
+              {filteredExpensesList.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 space-y-2">
+                  <Wallet className="w-12 h-12 mx-auto text-slate-300" />
+                  <p className="font-medium text-slate-600">Belum ada catatan pengeluaran kas pada filter ini.</p>
+                  <p className="text-xs text-slate-400">
+                    Klik tombol "<strong>+ Catat Pengeluaran Kas</strong>" untuk mulai mencatat biaya sampah, makan, listrik, atau donasi.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredExpensesList.map(exp => (
+                    <div
+                      key={exp.id}
+                      className="bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-0.5 rounded-md">
+                            {exp.category}
+                          </span>
+                          <span className="text-xs text-slate-500 font-medium">
+                            {new Date(exp.created_at).toLocaleString('id-ID')}
+                          </span>
+                          <span className="text-xs text-slate-600 flex items-center gap-1 font-semibold">
+                            <User className="w-3 h-3 text-emerald-600" />
+                            <span>Kasir: {exp.cashier_name}</span>
+                          </span>
+                        </div>
+
+                        {exp.notes && (
+                          <p className="text-xs text-slate-700 font-medium bg-white px-2.5 py-1 rounded-md border border-slate-200 inline-block">
+                            📝 {exp.notes}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200">
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block uppercase font-bold">Nominal Kas Keluar</span>
+                          <span className="text-base font-black text-rose-600 font-mono">
+                            -{formatRupiah(exp.amount)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteExpense(exp.id)}
+                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                          title="Hapus Catatan Pengeluaran"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -5921,6 +6625,165 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CASH EXPENSE MODAL (PENGELUARAN KAS TOKO: SAMPAH, LISTRIK, MAKAN, DONASI, PRIVE, DLL) */}
+      {expenseModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3 sm:p-5">
+          <div className="bg-slate-900 border-2 border-rose-500/60 text-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2.5 bg-rose-500/20 text-rose-400 rounded-xl border border-rose-500/30">
+                  <Wallet className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-white">💸 Catat Pengeluaran Kas Toko</h3>
+                  <p className="text-xs text-rose-300">Sampah, listrik, makan/minum, donasi, prive, dll</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpenseModalOpen(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-2 rounded-xl border border-slate-700 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveExpense} className="space-y-4">
+              {/* Info Kasir Bertugas Otomatis */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Nama Kasir Bertugas Saat Ini</span>
+                  <span className="text-sm font-black text-amber-300 flex items-center gap-1.5 mt-0.5">
+                    <User className="w-4 h-4 text-emerald-400" />
+                    {currentUser?.name || cashierName}
+                  </span>
+                </div>
+                <span className="text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-bold">
+                  ✓ Otomatis
+                </span>
+              </div>
+
+              {/* Kategori Pengeluaran */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5 uppercase">
+                  Kategori Pengeluaran Kas <span className="text-rose-400">*</span>
+                </label>
+                <select
+                  value={expenseCategory}
+                  onChange={e => setExpenseCategory(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-950 border-2 border-slate-700 rounded-xl text-white font-bold text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                >
+                  <option value="Uang Sampah">🗑️ Uang Sampah (Kebersihan)</option>
+                  <option value="Listrik / Air">⚡ Biaya Listrik & Air</option>
+                  <option value="Makan & Minum">🍱 Biaya Makan & Minum Kasir / Karyawan</option>
+                  <option value="Donasi">🤲 Uang Donasi / Sumbangan / Amal</option>
+                  <option value="Prive Tunai">💼 Prive Tunai (Pengambilan Pribadi Pemilik Toko)</option>
+                  <option value="Operasional Toko">📦 Biaya Operasional & Perlengkapan Toko</option>
+                  <option value="Lainnya">📝 Pengeluaran Kas Tunai Lainnya</option>
+                </select>
+              </div>
+
+              {/* Nominal Pengeluaran (Rp) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-300 uppercase">
+                    Nominal Pengeluaran (Rp) <span className="text-rose-400">*</span>
+                  </label>
+                  {expenseAmount && (
+                    <span className="text-xs font-mono font-bold text-amber-300">
+                      {formatRupiah(parseFloat(expenseAmount.replace(/[^0-9]/g, '')) || 0)}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-slate-400 font-black text-sm">Rp</span>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Contoh: 15000"
+                    value={expenseAmount}
+                    onChange={e => setExpenseAmount(e.target.value)}
+                    className="w-full pl-11 pr-4 py-2.5 bg-slate-950 border-2 border-rose-500/50 rounded-xl text-white font-black text-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                {/* Quick Chips Nominal */}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {[2000, 5000, 10000, 15000, 20000, 50000, 100000].map(amt => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setExpenseAmount(String(amt))}
+                      className="text-xs bg-slate-800 hover:bg-rose-900 text-rose-200 border border-slate-700 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer"
+                    >
+                      +{amt >= 1000 ? `${amt / 1000}rb` : amt}
+                    </button>
+                  ))}
+                  {expenseAmount && (
+                    <button
+                      type="button"
+                      onClick={() => setExpenseAmount('')}
+                      className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-400 px-2 py-1 rounded-lg transition cursor-pointer"
+                    >
+                      ✕ Hapus
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Catatan / Keterangan Pengeluaran */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5 uppercase">
+                  Catatan / Keterangan (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Iuran sampah mingguan RT / Beli galon air minum"
+                  value={expenseNotes}
+                  onChange={e => setExpenseNotes(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+
+              {/* Informasi Efek Akuntansi */}
+              <div className="bg-rose-950/40 border border-rose-800/80 rounded-xl p-3 text-[11px] text-rose-200 space-y-1">
+                <div className="font-bold text-rose-300 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Pengaruh Terhadap Keuangan Toko:</span>
+                </div>
+                <p className="leading-relaxed">
+                  Pengeluaran kas tunai ini akan <strong>mengurangi pemasukan bersih toko (net income)</strong> dan <strong>mengurangi saldo fisik uang tunai di laci kasir</strong> pada rekap keuangan shift kasir.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setExpenseModalOpen(false)}
+                  className="w-1/3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={expenseSubmitting}
+                  className="w-2/3 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {expenseSubmitting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>Simpan Pengeluaran Kas</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
