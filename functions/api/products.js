@@ -3,6 +3,19 @@
  * Berinteraksi langsung dengan Cloudflare D1 (env.DB)
  */
 
+function formatFriendlyError(err, defaultAction = "memproses produk") {
+  const rawMsg = err?.message || String(err || '');
+  if (
+    rawMsg.includes('UNIQUE constraint failed') ||
+    rawMsg.includes('SQLITE_CONSTRAINT') ||
+    rawMsg.includes('products.barcode') ||
+    rawMsg.includes('D1_ERROR')
+  ) {
+    return '⚠️ BARCODE SUDAH DIPAKAI! Nomor barcode ini sudah terdaftar untuk barang lain. Silakan gunakan nomor barcode yang berbeda atau edit barang yang sudah ada.';
+  }
+  return `Gagal ${defaultAction}: ${rawMsg}`;
+}
+
 export async function onRequestGet(context) {
   try {
     const url = new URL(context.request.url);
@@ -10,7 +23,7 @@ export async function onRequestGet(context) {
     const barcode = url.searchParams.get('barcode');
 
     if (!context.env || !context.env.DB) {
-      return Response.json({ error: "Cloudflare D1 binding (env.DB) not found." }, { status: 500 });
+      return Response.json({ error: "Cloudflare D1 binding (env.DB) belum terhubung di wrangler.toml." }, { status: 500 });
     }
 
     if (barcode) {
@@ -32,7 +45,7 @@ export async function onRequestGet(context) {
     ).all();
     return Response.json(results);
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return Response.json({ error: formatFriendlyError(err, "memuat data produk") }, { status: 500 });
   }
 }
 
@@ -42,11 +55,11 @@ export async function onRequestPost(context) {
     const { barcode, name, price } = body;
 
     if (!barcode || !name || price === undefined) {
-      return Response.json({ error: "Barcode, name, dan price wajib diisi" }, { status: 400 });
+      return Response.json({ error: "Barcode, nama barang, dan harga wajib diisi" }, { status: 400 });
     }
 
     if (!context.env || !context.env.DB) {
-      return Response.json({ error: "Cloudflare D1 binding (env.DB) not found." }, { status: 500 });
+      return Response.json({ error: "Cloudflare D1 binding (env.DB) belum terhubung di wrangler.toml." }, { status: 500 });
     }
 
     const stmt = context.env.DB.prepare(
@@ -56,7 +69,7 @@ export async function onRequestPost(context) {
     const result = await stmt.run();
     return Response.json({ success: true, id: result.meta?.last_row_id });
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return Response.json({ error: formatFriendlyError(err, "menambah produk baru") }, { status: 400 });
   }
 }
 
@@ -66,11 +79,11 @@ export async function onRequestPut(context) {
     const { id, barcode, name, price } = body;
 
     if (!id || !barcode || !name || price === undefined) {
-      return Response.json({ error: "ID, barcode, name, dan price wajib diisi" }, { status: 400 });
+      return Response.json({ error: "ID, barcode, nama barang, dan harga wajib diisi" }, { status: 400 });
     }
 
     if (!context.env || !context.env.DB) {
-      return Response.json({ error: "Cloudflare D1 binding (env.DB) not found." }, { status: 500 });
+      return Response.json({ error: "Cloudflare D1 binding (env.DB) belum terhubung di wrangler.toml." }, { status: 500 });
     }
 
     await context.env.DB.prepare(
@@ -79,7 +92,7 @@ export async function onRequestPut(context) {
 
     return Response.json({ success: true });
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return Response.json({ error: formatFriendlyError(err, "memperbarui produk") }, { status: 400 });
   }
 }
 
@@ -93,12 +106,12 @@ export async function onRequestDelete(context) {
     }
 
     if (!context.env || !context.env.DB) {
-      return Response.json({ error: "Cloudflare D1 binding (env.DB) not found." }, { status: 500 });
+      return Response.json({ error: "Cloudflare D1 binding (env.DB) belum terhubung di wrangler.toml." }, { status: 500 });
     }
 
     await context.env.DB.prepare("DELETE FROM products WHERE id = ?").bind(id).run();
     return Response.json({ success: true });
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return Response.json({ error: formatFriendlyError(err, "menghapus produk") }, { status: 500 });
   }
 }

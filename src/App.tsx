@@ -173,13 +173,84 @@ export default function App() {
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'error' | 'success' } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
+  const sanitizeErrorMessage = (rawMessage: string): string => {
+    if (!rawMessage) return '⚠️ Terjadi kendala pada sistem. Silakan coba muat ulang halaman.';
+    const str = String(rawMessage);
+
+    // 1. Duplicate Barcode Error
+    if (
+      str.includes('UNIQUE constraint failed: products.barcode') ||
+      (str.includes('products') && str.includes('barcode') && (str.includes('UNIQUE') || str.includes('CONSTRAINT'))) ||
+      str.includes('Barcode sudah terdaftar') ||
+      str.includes('Barcode sudah digunakan')
+    ) {
+      return '⚠️ KODE BARCODE SUDAH DIPAKAI!\n\nNomor barcode ini sudah terdaftar untuk barang lain. Silakan gunakan nomor barcode yang berbeda atau edit barang yang sudah ada.';
+    }
+
+    // 2. Duplicate Invoice Error
+    if (
+      str.includes('UNIQUE constraint failed: transactions.invoice_no') ||
+      (str.includes('transactions') && str.includes('invoice_no'))
+    ) {
+      return '⚠️ NOMOR NOTA TRANSAKSI TERDAPAT DUPLIKAT!\n\nSistem akan secara otomatis memperbarui nomor nota baru untuk transaksi berikutnya.';
+    }
+
+    // 3. Missing Table Error (Database not bootstrapped yet)
+    if (
+      str.includes('no such table') ||
+      str.includes('table products') ||
+      str.includes('table transactions') ||
+      str.includes('table transaction_items')
+    ) {
+      return '⚠️ TABEL DATABASE D1 BELUM SIAP!\n\nTabel database Cloudflare D1 belum terbuat. Silakan buka menu "? (Petunjuk PWA & Bantuan)" di atas lalu tekan tombol "⚡ Bootstrap Database D1 Sekarang" untuk menyiapkan tabel otomatis.';
+    }
+
+    // 4. Missing Column / Schema Mismatch
+    if (str.includes('no such column') || str.includes('has no column')) {
+      return '⚠️ STRUKTUR KOLOM DATABASE PERLU DIPERBARUI!\n\nSilakan buka menu "? (Petunjuk PWA & Bantuan)" lalu tekan tombol "⚡ Bootstrap Database D1 Sekarang" untuk memperbarui struktur tabel.';
+    }
+
+    // 5. Cloudflare D1 Binding / Connection Error
+    if (
+      str.includes('D1 binding') ||
+      str.includes('env.DB') ||
+      str.includes('binding') ||
+      str.includes('D1_BINDING_NOT_FOUND')
+    ) {
+      return '⚠️ KONEKSI CLOUDFLARE D1 BELUM TERHUBUNG!\n\nAplikasi belum terhubung dengan database Cloudflare D1. Silakan periksa konfigurasi D1 (env.DB) Anda di Cloudflare Dashboard.';
+    }
+
+    // 6. Network / Offline Error
+    if (
+      str.includes('Failed to fetch') ||
+      str.includes('NetworkError') ||
+      str.includes('Network request failed') ||
+      str.includes('Load failed') ||
+      str.includes('Offline')
+    ) {
+      return '📡 INTERNET TERPUTUS ATAU SERVER TIDAK MERESPON!\n\nJangan khawatir, data transaksi Anda disimpan otomatis di penyimpanan lokal HP/PC Anda dan akan disinkronkan saat internet terhubung kembali.';
+    }
+
+    // 7. Not Null / Datatype mismatch Error
+    if (
+      str.includes('NOT NULL constraint failed') ||
+      str.includes('datatype mismatch')
+    ) {
+      return '⚠️ MOHON LENGKAPI SELURUH ISIAN!\n\nPastikan nama barang, barcode, dan angka harga telah terisi dengan benar (berupa angka tanpa huruf).';
+    }
+
+    return str;
+  };
+
   const showAlert = (message: string, type: 'info' | 'error' | 'success' = 'info') => {
-    setToast({ message, type });
+    const finalMsg = type === 'error' ? sanitizeErrorMessage(message) : message;
+    setToast({ message: finalMsg, type });
   };
 
   useEffect(() => {
     if (toast) {
-      const timer = setTimeout(() => setToast(null), 4000);
+      const displayDuration = toast.type === 'error' ? 8000 : 4000;
+      const timer = setTimeout(() => setToast(null), displayDuration);
       return () => clearTimeout(timer);
     }
   }, [toast]);
@@ -3812,23 +3883,30 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
         </div>
       )}
 
-      {/* TOAST NOTIFICATION */}
+      {/* TOAST NOTIFICATION - Senior Friendly Large Readable Error Box */}
       {toast && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4 pointer-events-auto">
-          <div className={`p-4 rounded-xl shadow-xl border flex items-center justify-between gap-3 text-sm font-medium ${
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 max-w-lg w-full px-4 pointer-events-auto">
+          <div className={`p-4 sm:p-5 rounded-2xl shadow-2xl border-3 flex items-start justify-between gap-3 text-base sm:text-lg font-black leading-snug ${
             toast.type === 'error'
-              ? 'bg-rose-50 border-rose-300 text-rose-800'
+              ? 'bg-rose-950 border-rose-500 text-white'
               : toast.type === 'success'
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-              : 'bg-indigo-50 border-indigo-300 text-indigo-800'
+              ? 'bg-emerald-950 border-emerald-400 text-white'
+              : 'bg-slate-900 border-amber-400 text-white'
           }`}>
-            <span>{toast.message}</span>
+            <div className="flex items-start gap-2.5">
+              <span className="text-xl shrink-0 mt-0.5">
+                {toast.type === 'error' ? '🚫' : toast.type === 'success' ? '✅' : 'ℹ️'}
+              </span>
+              <div className="whitespace-pre-line text-sm sm:text-base font-extrabold leading-relaxed">
+                {toast.message}
+              </div>
+            </div>
             <button
               onClick={() => setToast(null)}
-              className="p-1 rounded-md hover:bg-black/5 text-current opacity-70 hover:opacity-100 transition"
+              className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition shrink-0 cursor-pointer"
               aria-label="Tutup"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
