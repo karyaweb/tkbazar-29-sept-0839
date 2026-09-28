@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* High-Contrast Navy Blue Overrides for Senior Eyes (Mata Tua) */
+.text-slate-500 {
+  color: #0f2942 !important; /* Deep Navy Blue */
+}
+.text-slate-400 {
+  color: #1e3a8a !important; /* Royal Navy Blue */
+}
+.text-slate-600 {
+  color: #0f172a !important; /* Darkest Navy Slate */
+}
+
 @keyframes totalFlash {
   0% {
     transform: scale(1.08);

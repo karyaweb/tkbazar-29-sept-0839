@@ -83,7 +83,9 @@ function getInitialData(): DatabaseData {
       { id: 7, barcode: '8998888776655', name: 'Minyak Goreng Filma 2 Liter', price: 38000 },
       { id: 8, barcode: '8991112223344', name: 'Telur Ayam Negeri 1 Kg', price: 28000 },
       { id: 9, barcode: '8993334445566', name: 'Teh Botol Sosro 450ml', price: 4500 },
-      { id: 10, barcode: '8997778889900', name: 'Chitato Snack Sapi Panggang 68g', price: 10500 }
+      { id: 10, barcode: '8997778889900', name: 'Chitato Snack Sapi Panggang 68g', price: 10500 },
+      { id: 11, barcode: 'JASA001', name: 'Jasa Antar Galon Air Mineral', price: 5000 },
+      { id: 12, barcode: 'JASA002', name: 'Jasa Pasang / Instalasi Barang', price: 25000 }
     ],
     transactions: [],
     expenses: []

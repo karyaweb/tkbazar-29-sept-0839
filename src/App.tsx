@@ -254,6 +254,10 @@ export default function App() {
   const [showTaxSection, setShowTaxSection] = useState<boolean>(false);
   const [menuDropdownOpen, setMenuDropdownOpen] = useState<boolean>(false);
 
+  // Unregistered Item Prompt State & Immediate Cart Addition
+  const [unregisteredItemPrompt, setUnregisteredItemPrompt] = useState<{ barcode: string; name: string } | null>(null);
+  const [addCreatedToCartOnSave, setAddCreatedToCartOnSave] = useState<boolean>(false);
+
   // User Auth & Protection State (Session: 8 Hours / 480 Minutes)
   const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 480 Menit
 
@@ -318,8 +322,8 @@ export default function App() {
 
   // Handle Tab Switch with RBAC protection for KASIR
   const handleTabChange = (tab: string) => {
-    if (currentUser?.role === 'KASIR' && ['products', 'top-selling', 'settings', 'cloudflare'].includes(tab)) {
-      showAlert('🔒 AKSES DIBATASI KHUSUS ADMIN!\nKasir hanya dapat mengakses Kasir (Hitung), Katalog Produk, Riwayat Transaksi, dan Pengeluaran Kas Toko.', 'error');
+    if (currentUser?.role === 'KASIR' && ['top-selling', 'settings', 'cloudflare'].includes(tab)) {
+      showAlert('🔒 AKSES DIBATASI KHUSUS ADMIN!\nKasir dapat mengakses Hitung Kasir, Katalog, Atur Barang/Jasa, Riwayat Transaksi, dan Pengeluaran Kas Toko.', 'error');
       return;
     }
     setActiveTab(tab as any);
@@ -1046,7 +1050,7 @@ export default function App() {
         if (product) {
           addToCart(product);
         } else {
-          showAlert(`Produk dengan barcode "${barcode}" tidak ditemukan di database!`, 'error');
+          setUnregisteredItemPrompt({ barcode, name: '' });
         }
       }
     } catch (e) {
@@ -1451,11 +1455,26 @@ export default function App() {
       });
 
       if (res.ok) {
+        const savedData = await res.json();
+        const savedProd: Product = savedData.product || {
+          id: savedData.id || Date.now(),
+          barcode,
+          name,
+          price: parseFloat(price)
+        };
+
         fetchProducts();
         setProductModalOpen(false);
         setProductForm({ barcode: '', name: '', price: '' });
         setEditingProductId(null);
-        showAlert('Produk berhasil disimpan!', 'success');
+
+        if (addCreatedToCartOnSave) {
+          addToCart(savedProd);
+          setAddCreatedToCartOnSave(false);
+          showAlert(`✅ Barang / Jasa "${savedProd.name}" berhasil disimpan & langsung dimasukkan ke keranjang!`, 'success');
+        } else {
+          showAlert('✅ Data barang / jasa berhasil disimpan ke database!', 'success');
+        }
       } else {
         const err = await res.json();
         showAlert(err.error || 'Gagal menyimpan produk', 'error');
@@ -2560,17 +2579,6 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               )}
             </button>
 
-            {/* Quick Record Cash Expense Button */}
-            <button
-              onClick={() => setExpenseModalOpen(true)}
-              className="flex items-center space-x-1.5 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all shadow-sm border-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border-rose-700/80 cursor-pointer"
-              title="Catat Pengeluaran Kas Toko (Uang Sampah, Listrik, Makan, Donasi, Prive, dll)"
-            >
-              <Wallet className="w-4 h-4 text-rose-400 shrink-0" />
-              <span className="hidden sm:inline">Pengeluaran Kas</span>
-              <span className="sm:hidden">Beban</span>
-            </button>
-
             {/* MENU Button */}
             <button
               onClick={() => setMenuDropdownOpen(!menuDropdownOpen)}
@@ -2613,7 +2621,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
               {/* Submenus with large legible touch targets for 60+ users */}
               <div className="space-y-2">
-                {/* 1. Lihat Katalog Produk */}
+                {/* 1. Lihat Katalog Barang / Jasa */}
                 <button
                   onClick={() => handleTabChange('catalog')}
                   className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
@@ -2627,14 +2635,38 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       <Package className="w-5 h-5 text-rose-400" />
                     </div>
                     <div>
-                      <div className="font-bold text-base">Lihat Katalog Produk</div>
-                      <div className="text-xs text-slate-400">Daftar semua barang & harga ({products.length} item)</div>
+                      <div className="font-bold text-base">Lihat Katalog Barang / Jasa</div>
+                      <div className="text-xs text-slate-400">Daftar semua barang, jasa & harga ({products.length} item)</div>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-slate-400" />
                 </button>
 
-                {/* 2. Top Terjual (Blocked for KASIR) */}
+                {/* 2. Atur Barang / Jasa (Dapat Diakses KASIR & ADMIN) */}
+                <button
+                  onClick={() => handleTabChange('products')}
+                  className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
+                    activeTab === 'products'
+                      ? 'bg-rose-600 text-white border-rose-400 shadow-md'
+                      : 'bg-slate-800/80 hover:bg-slate-800 text-slate-100 border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2.5 bg-blue-500/20 text-blue-400 rounded-xl">
+                      <Barcode className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-base flex items-center gap-1.5">
+                        <span>Atur Barang / Jasa</span>
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded-full font-bold">Kasir & Admin</span>
+                      </div>
+                      <div className="text-xs text-slate-400">Tambah item baru, ubah harga, hapus, import CSV</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400" />
+                </button>
+
+                {/* 3. Top Terjual (Blocked for KASIR) */}
                 <button
                   onClick={() => handleTabChange('top-selling')}
                   className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
@@ -2659,34 +2691,6 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                         )}
                       </div>
                       <div className="text-xs text-slate-400">Peringkat barang paling laku per periode</div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-slate-400" />
-                </button>
-
-                {/* 3. Kelola Barang (Blocked for KASIR) */}
-                <button
-                  onClick={() => handleTabChange('products')}
-                  className={`w-full text-left p-3.5 rounded-xl transition flex items-center justify-between border-2 ${
-                    activeTab === 'products'
-                      ? 'bg-rose-600 text-white border-rose-400 shadow-md'
-                      : currentUser?.role === 'KASIR'
-                      ? 'bg-slate-900/60 text-slate-500 border-slate-800 opacity-60'
-                      : 'bg-slate-800/80 hover:bg-slate-800 text-slate-100 border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2.5 bg-blue-500/20 text-blue-400 rounded-xl">
-                      <Barcode className="w-5 h-5 text-blue-400" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-base flex items-center gap-1.5">
-                        <span>Kelola Barang</span>
-                        {currentUser?.role === 'KASIR' && (
-                          <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-500/40 px-1.5 py-0.2 rounded font-mono">🔒 ADMIN</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-slate-400">Tambah baru, ubah harga, hapus, import CSV</div>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-slate-400" />
@@ -3134,10 +3138,30 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                         <p className="text-sm">Memuat produk...</p>
                       </div>
                     ) : filteredProducts.length === 0 ? (
-                      <div className="py-12 text-center text-slate-400">
-                        <Package className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-                        <p className="font-medium text-slate-600">Tidak ada produk yang cocok dengan pencarian.</p>
-                        <p className="text-xs text-slate-400 mt-1">Periksa kembali ejaan nama atau kode barcode.</p>
+                      <div className="py-10 px-3 text-center bg-amber-50 border-2 border-amber-400/80 rounded-2xl my-2 space-y-3 shadow-sm">
+                        <AlertCircle className="w-10 h-10 mx-auto text-amber-600" />
+                        <div>
+                          <p className="font-black text-slate-900 text-sm sm:text-base">
+                            Barang / Jasa "{searchQuery}" belum terdaftar di database!
+                          </p>
+                          <p className="text-xs text-slate-700 mt-1 font-medium">
+                            Kasir dapat langsung menambahkan item ini ke database sekarang tanpa menunggu admin.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const isNumeric = /^[0-9A-Z_]+$/i.test(searchQuery.trim());
+                            setUnregisteredItemPrompt({
+                              barcode: isNumeric ? searchQuery.trim() : '',
+                              name: isNumeric ? '' : searchQuery.trim()
+                            });
+                          }}
+                          className="bg-rose-600 hover:bg-rose-700 text-white font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition inline-flex items-center gap-2 cursor-pointer active:scale-98"
+                        >
+                          <Plus className="w-4 h-4 stroke-[3]" />
+                          <span>+ Tambah Barang / Jasa Baru Ini Sekarang</span>
+                        </button>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[460px] overflow-y-auto pr-1">
@@ -3834,14 +3858,6 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                             ✕ Reset
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => setExpenseModalOpen(true)}
-                          className="text-xs bg-purple-800 hover:bg-purple-700 text-purple-200 font-bold px-2.5 py-1 rounded-lg border border-purple-600 transition ml-auto cursor-pointer flex items-center gap-1"
-                        >
-                          <Wallet className="w-3.5 h-3.5" />
-                          <span>Pengeluaran Kas</span>
-                        </button>
                       </div>
 
                       {effectiveAdminFee > 0 && (
@@ -4042,24 +4058,17 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
               <div>
-                <h2 className="text-xl font-bold text-slate-800">Manajemen Produk (Database Cloudflare D1)</h2>
-                <p className="text-xs text-slate-500 mt-1">Kelola data barang, harga, dan barcode untuk toko Anda.</p>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2">
+                  <Barcode className="w-6 h-6 text-rose-600" />
+                  <span>Atur Barang / Jasa</span>
+                </h2>
+                <p className="text-xs text-slate-700 mt-0.5 font-bold">
+                  Atur data barang & jasa toko, ubah harga, hapus, serta ekspor & impor file CSV.
+                </p>
               </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={exportProductsToCSV}
-                  className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Export CSV / Sheets</span>
-                </button>
-                <button
-                  onClick={() => setImportModalOpen(true)}
-                  className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Import CSV</span>
-                </button>
+
+              {/* Action Buttons: 1. Big "Tambah Barang / Jasa Baru", 2. Small Export/Import CSV */}
+              <div className="flex flex-col gap-2 w-full md:w-auto max-w-full overflow-hidden">
                 <button
                   onClick={() => {
                     setEditingProductId(null);
@@ -4067,11 +4076,28 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     setIsModalScanning(false);
                     setProductModalOpen(true);
                   }}
-                  className="flex items-center space-x-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition"
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white px-4 py-3 rounded-xl font-black text-sm sm:text-base shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Tambah Produk Baru</span>
+                  <Plus className="w-5 h-5 stroke-[3]" />
+                  <span>Tambah Barang / Jasa Baru</span>
                 </button>
+
+                <div className="flex items-center gap-2 w-full">
+                  <button
+                    onClick={exportProductsToCSV}
+                    className="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Export CSV</span>
+                  </button>
+                  <button
+                    onClick={() => setImportModalOpen(true)}
+                    className="flex-1 bg-indigo-700 hover:bg-indigo-800 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Import CSV</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -4080,7 +4106,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black uppercase text-pink-950 flex items-center gap-1.5">
                   <Search className="w-4 h-4 text-pink-700" />
-                  <span>Saring & Filter Barang (Ketik Nama / Barcode):</span>
+                  <span>Saring & Filter Barang / Jasa (Ketik Nama / Barcode):</span>
                 </label>
                 {productSearch && (
                   <button
@@ -4095,7 +4121,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 <Search className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-700 font-bold" />
                 <input
                   type="text"
-                  placeholder="Ketik huruf nama barang atau angka barcode untuk menyaring..."
+                  placeholder="Ketik huruf nama barang / jasa atau angka barcode untuk menyaring..."
                   value={productSearch}
                   onChange={e => setProductSearch(e.target.value)}
                   className="w-full pl-11 pr-10 py-3 bg-white border-2 border-pink-500 rounded-xl text-slate-950 font-black text-base placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-500/30"
@@ -4112,11 +4138,11 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               <p className="text-xs font-bold text-slate-800 pt-0.5">
                 {productSearch.trim() ? (
                   <span>
-                    Menampilkan <strong>{products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.barcode.toLowerCase().includes(productSearch.toLowerCase())).length}</strong> produk hasil saringan dari total {products.length} barang.
+                    Menampilkan <strong>{products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.barcode.toLowerCase().includes(productSearch.toLowerCase())).length}</strong> barang / jasa hasil saringan dari total {products.length} barang / jasa.
                   </span>
                 ) : (
                   <span>
-                    Menampilkan seluruh <strong>{products.length}</strong> produk. Ketik huruf nama barang di atas untuk menyaring.
+                    Menampilkan seluruh <strong>{products.length}</strong> barang / jasa. Ketik huruf nama barang / jasa di atas untuk menyaring.
                   </span>
                 )}
               </p>
@@ -5951,30 +5977,30 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
         )}
       </main>
 
-      {/* PRODUCT MODAL (Add / Edit) */}
+      {/* PRODUCT MODAL (Add / Edit Barang / Jasa) */}
       {productModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800">
-                {editingProductId ? 'Edit Produk' : 'Tambah Produk Baru'}
+              <h3 className="font-bold text-slate-900 text-lg">
+                {editingProductId ? 'Edit Barang / Jasa' : 'Tambah Barang / Jasa Baru'}
               </h3>
-              <button onClick={() => setProductModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setProductModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSaveProduct} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Kode Barcode / QR Code</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Kode Barcode / QR Barang / Jasa</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     required
-                    placeholder="Contoh: 8996001321045"
+                    placeholder="Contoh: 8996001321045 atau JASA001"
                     value={productForm.barcode}
                     onChange={e => setProductForm({ ...productForm, barcode: e.target.value })}
-                    className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-600"
+                    className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-600"
                   />
                   <button
                     type="button"
@@ -6040,14 +6066,14 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Nama Barang</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nama Barang / Jasa</label>
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Kopi Bubuk Special 200g"
+                  placeholder="Contoh: Kopi Bubuk 200g / Jasa Antar Galon Air Mineral"
                   value={productForm.name}
                   onChange={e => setProductForm({ ...productForm, name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-600"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-600"
                 />
               </div>
 
@@ -6711,29 +6737,6 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     className="w-full pl-11 pr-4 py-2.5 bg-slate-950 border-2 border-rose-500/50 rounded-xl text-white font-black text-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
-
-                {/* Quick Chips Nominal */}
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {[2000, 5000, 10000, 15000, 20000, 50000, 100000].map(amt => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setExpenseAmount(String(amt))}
-                      className="text-xs bg-slate-800 hover:bg-rose-900 text-rose-200 border border-slate-700 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer"
-                    >
-                      +{amt >= 1000 ? `${amt / 1000}rb` : amt}
-                    </button>
-                  ))}
-                  {expenseAmount && (
-                    <button
-                      type="button"
-                      onClick={() => setExpenseAmount('')}
-                      className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-400 px-2 py-1 rounded-lg transition cursor-pointer"
-                    >
-                      ✕ Hapus
-                    </button>
-                  )}
-                </div>
               </div>
 
               {/* Catatan / Keterangan Pengeluaran */}
@@ -6784,6 +6787,53 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* UNREGISTERED ITEM PROMPT MODAL */}
+      {unregisteredItemPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3">
+          <div className="bg-slate-900 border-2 border-amber-400 text-white rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 animate-modal-pop">
+            <div className="flex items-center space-x-3 text-amber-300 border-b border-slate-800 pb-3">
+              <AlertCircle className="w-7 h-7 text-amber-400 shrink-0" />
+              <div>
+                <h3 className="font-black text-lg text-white">Barang / Jasa Belum Terdaftar</h3>
+                <p className="text-xs text-amber-300 font-medium">Tambah Item Langsung untuk Kasir</p>
+              </div>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
+              Item <strong>"{unregisteredItemPrompt.barcode || unregisteredItemPrompt.name}"</strong> tidak ditemukan di database.
+              Apakah Anda ingin menambahkan item barang / jasa baru ini ke database saat ini juga agar dapat langsung ditransaksikan tanpa menunggu admin?
+            </p>
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProductId(null);
+                  setProductForm({
+                    barcode: unregisteredItemPrompt.barcode,
+                    name: unregisteredItemPrompt.name,
+                    price: ''
+                  });
+                  setIsModalScanning(false);
+                  setAddCreatedToCartOnSave(true);
+                  setProductModalOpen(true);
+                  setUnregisteredItemPrompt(null);
+                }}
+                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-sm py-3 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              >
+                <Plus className="w-5 h-5 stroke-[3]" />
+                <span>Ya, Tambah Barang / Jasa Baru Sekarang</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setUnregisteredItemPrompt(null)}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2.5 px-4 rounded-xl border border-slate-700 transition cursor-pointer"
+              >
+                Batal / Abaikan
+              </button>
+            </div>
           </div>
         </div>
       )}
