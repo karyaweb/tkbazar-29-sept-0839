@@ -250,6 +250,9 @@ async function startServer() {
     res.json({ success: true, countAdded, countUpdated });
   });
 
+  // Server-side Anti-Brute Force Protection Tracker
+  const loginAttemptsMap = new Map<string, { count: number; lockUntil: number }>();
+
   // Auth & User Management Endpoints
   app.post('/api/auth', (req, res) => {
     const db = loadDb();
@@ -261,13 +264,39 @@ async function startServer() {
 
     if (action === 'login') {
       const { username, password } = req.body;
+      const clientIp = (req.headers['x-forwarded-for'] || req.ip || 'unknown').toString();
+      const now = Date.now();
+      const userAttempt = loginAttemptsMap.get(clientIp) || { count: 0, lockUntil: 0 };
+
+      if (userAttempt.lockUntil > now) {
+        const secondsLeft = Math.ceil((userAttempt.lockUntil - now) / 1000);
+        return res.status(429).json({
+          error: `⚠️ Akses dikunci sementara (5x gagal)! Silakan tunggu ${secondsLeft} detik.`
+        });
+      }
+
       if (!username || !password) {
         return res.status(400).json({ error: 'Username dan Password wajib diisi' });
       }
       const user = db.users.find(u => u.username.toLowerCase() === String(username).trim().toLowerCase());
       if (!user || user.password !== password) {
-        return res.status(401).json({ error: 'Username atau Password salah!' });
+        userAttempt.count += 1;
+        if (userAttempt.count >= 5) {
+          userAttempt.lockUntil = now + 60000; // Lock for 60 seconds
+          userAttempt.count = 0;
+          loginAttemptsMap.set(clientIp, userAttempt);
+          return res.status(429).json({
+            error: '⚠️ 5x SALAH PASSWORD! Akses dikunci selama 60 detik untuk mencegah percobaan tidak sah.'
+          });
+        }
+        loginAttemptsMap.set(clientIp, userAttempt);
+        return res.status(401).json({
+          error: `Username atau Password salah! (Percobaan ${userAttempt.count}/5)`
+        });
       }
+
+      // Reset on success
+      loginAttemptsMap.delete(clientIp);
       return res.json({
         success: true,
         user: { id: user.id, username: user.username, name: user.name, role: user.role }

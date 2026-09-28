@@ -47,6 +47,10 @@ import {
   VolumeX,
   Smartphone,
   BookOpen,
+  Battery,
+  BatteryCharging,
+  BatteryLow,
+  BatteryWarning,
   List,
   Eye,
   CheckCircle,
@@ -135,6 +139,40 @@ export default function App() {
   const [seniorFontMode, setSeniorFontMode] = useState<boolean>(() => {
     return localStorage.getItem('tokobazar_senior_mode') === 'true';
   });
+  const [thermalPaperWidth, setThermalPaperWidth] = useState<'58mm' | '80mm'>(() => {
+    return (localStorage.getItem('tokobazar_thermal_paper_width') as '58mm' | '80mm') || '58mm';
+  });
+
+  // Mobile POS Battery Monitor State
+  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  const [isCharging, setIsCharging] = useState<boolean>(false);
+  const [batterySupported, setBatterySupported] = useState<boolean>(false);
+  const [dismissBatteryWarning, setDismissBatteryWarning] = useState<boolean>(false);
+
+  // Battery Status API Listener
+  useEffect(() => {
+    if ('getBattery' in navigator) {
+      (navigator as any).getBattery().then((battery: any) => {
+        setBatterySupported(true);
+        const updateBattery = () => {
+          const level = Math.round(battery.level * 100);
+          setBatteryLevel(level);
+          setIsCharging(battery.charging);
+        };
+        updateBattery();
+
+        battery.addEventListener('levelchange', updateBattery);
+        battery.addEventListener('chargingchange', updateBattery);
+
+        return () => {
+          battery.removeEventListener('levelchange', updateBattery);
+          battery.removeEventListener('chargingchange', updateBattery);
+        };
+      }).catch((err: any) => {
+        console.warn('Battery status API not supported or blocked:', err);
+      });
+    }
+  }, []);
 
   const [scannerStarting, setScannerStarting] = useState<boolean>(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
@@ -178,18 +216,27 @@ export default function App() {
   const [showTaxSection, setShowTaxSection] = useState<boolean>(false);
   const [menuDropdownOpen, setMenuDropdownOpen] = useState<boolean>(false);
 
-  // User Auth & Protection State
+  // User Auth & Protection State (Session: 8 Hours / 480 Minutes)
+  const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 480 Menit
+
   interface AuthUser {
     id: number;
     username: string;
     name: string;
     role: 'KASIR' | 'ADMIN';
+    loginTime?: number;
   }
 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     try {
-      const saved = localStorage.getItem('tokobazar_auth_user');
-      return saved ? JSON.parse(saved) : null;
+      const savedStr = localStorage.getItem('tokobazar_auth_user');
+      if (!savedStr) return null;
+      const saved: AuthUser = JSON.parse(savedStr);
+      if (saved.loginTime && Date.now() - saved.loginTime > SESSION_DURATION_MS) {
+        localStorage.removeItem('tokobazar_auth_user');
+        return null;
+      }
+      return saved;
     } catch {
       return null;
     }
@@ -263,8 +310,9 @@ export default function App() {
       const data = await res.json();
 
       if (res.ok && data.success && data.user) {
-        setCurrentUser(data.user);
-        localStorage.setItem('tokobazar_auth_user', JSON.stringify(data.user));
+        const authData = { ...data.user, loginTime: Date.now() };
+        setCurrentUser(authData);
+        localStorage.setItem('tokobazar_auth_user', JSON.stringify(authData));
         setCashierName(data.user.name);
         localStorage.setItem('tokobazar_cashier_name', data.user.name);
         setFailedAttempts(0);
@@ -286,14 +334,14 @@ export default function App() {
       const u = loginUsername.trim().toLowerCase();
       const p = loginPassword.trim();
       if (u === 'kasir' && p === 'kasir1234') {
-        const localUser: AuthUser = { id: 1, username: 'kasir', name: 'Kasir Utama', role: 'KASIR' };
+        const localUser: AuthUser = { id: 1, username: 'kasir', name: 'Kasir Utama', role: 'KASIR', loginTime: Date.now() };
         setCurrentUser(localUser);
         localStorage.setItem('tokobazar_auth_user', JSON.stringify(localUser));
         setCashierName('Kasir Utama');
         setFailedAttempts(0);
         showAlert('✅ Login Kasir Utama Berhasil (Offline)', 'success');
       } else if (u === 'admin' && p === 'admin1234') {
-        const localUser: AuthUser = { id: 2, username: 'admin', name: 'Administrator', role: 'ADMIN' };
+        const localUser: AuthUser = { id: 2, username: 'admin', name: 'Administrator', role: 'ADMIN', loginTime: Date.now() };
         setCurrentUser(localUser);
         localStorage.setItem('tokobazar_auth_user', JSON.stringify(localUser));
         setCashierName('Administrator');
@@ -1578,6 +1626,92 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
     a.click();
   };
 
+  // Direct Bluetooth Thermal Printer (ESC/POS) & System Print Fallback
+  const printThermalReceipt = async (targetTx?: Transaction) => {
+    const tx = targetTx || completedTx;
+    if (!tx) {
+      showAlert('Tidak ada data transaksi untuk dicetak', 'error');
+      return;
+    }
+
+    const is80mm = thermalPaperWidth === '80mm';
+    const divider = is80mm
+      ? '------------------------------------------------\n'
+      : '--------------------------------\n';
+
+    // Attempt Web Bluetooth direct print if supported
+    if ('bluetooth' in navigator && (navigator as any).bluetooth) {
+      try {
+        showAlert(`🔍 Mencari Printer Thermal Bluetooth (${thermalPaperWidth})... Silakan pilih printer Anda.`, 'info');
+        const device = await (navigator as any).bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [
+            '000018f0-0000-1000-8000-00805f9b34fb',
+            '0000ff00-0000-1000-8000-00805f9b34fb',
+            '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+            '00001101-0000-1000-8000-00805f9b34fb'
+          ]
+        });
+
+        if (device && device.gatt) {
+          const server = await device.gatt.connect();
+          let service: any;
+          try {
+            service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+          } catch {
+            const services = await server.getPrimaryServices();
+            if (services.length > 0) service = services[0];
+          }
+
+          if (service) {
+            const characteristics = await service.getCharacteristics();
+            const writeChar = characteristics.find((c: any) => c.properties.write || c.properties.writeWithoutResponse);
+            if (writeChar) {
+              const encoder = new TextEncoder();
+              let escpos = '\x1B\x40'; // Initialize printer
+              escpos += '\x1B\x61\x01'; // Center alignment
+              escpos += `${(storeName || 'TOKO BAZAR').toUpperCase()}\n`;
+              escpos += 'Struk Pembayaran Belanja\n';
+              escpos += divider;
+              escpos += '\x1B\x61\x00'; // Left alignment
+              escpos += `No. Inv : ${tx.invoice_no}\n`;
+              escpos += `Tanggal : ${new Date(tx.created_at).toLocaleString('id-ID')}\n`;
+              escpos += `Kasir   : ${tx.cashier_name}\n`;
+              escpos += divider;
+              tx.items.forEach(i => {
+                escpos += `${i.product_name}\n`;
+                escpos += ` ${i.quantity} x ${formatRupiah(i.price)} = ${formatRupiah(i.subtotal)}\n`;
+              });
+              escpos += divider;
+              if (tx.subtotal_amount && (tx.discount_amount || tx.tax_amount)) {
+                escpos += `Subtotal : ${formatRupiah(tx.subtotal_amount)}\n`;
+              }
+              if (tx.discount_amount) escpos += `Diskon   : -${formatRupiah(tx.discount_amount)}\n`;
+              if (tx.tax_amount) escpos += `Pajak    : +${formatRupiah(tx.tax_amount)}\n`;
+              escpos += `TOTAL    : ${formatRupiah(tx.total_amount)}\n`;
+              escpos += `Tunai    : ${formatRupiah(tx.paid_amount)}\n`;
+              escpos += `Kembali  : ${formatRupiah(tx.change_amount)}\n`;
+              escpos += divider;
+              escpos += '\x1B\x61\x01'; // Center alignment
+              escpos += 'Terima Kasih Telah Berbelanja!\n\n\n\n';
+              escpos += '\x1D\x56\x41\x03'; // Paper cut
+
+              const data = encoder.encode(escpos);
+              await writeChar.writeValue(data);
+              showAlert(`✅ Berhasil mengirim struk (${thermalPaperWidth}) ke Printer Thermal Bluetooth!`, 'success');
+              return;
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn('Bluetooth print skipped/failed, opening standard print dialog:', err);
+      }
+    }
+
+    // Standard Print Dialog Fallback (Formatted via @media print for 58mm/80mm thermal paper)
+    window.print();
+  };
+
   // Filter products for POS
   const filteredProducts = products.filter(
     p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode.includes(searchQuery)
@@ -1896,8 +2030,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
             </div>
           </div>
 
-          <div className="text-center text-[11px] text-slate-500">
-            TokoBazar POS • Path Khusus Login: <code className="text-amber-400 font-mono font-bold">/login-999</code>
+          <div className="text-center text-[11px] text-slate-500 font-medium">
+            TokoBazar POS • Kasir & Manajemen Toko Digital
           </div>
         </div>
 
@@ -1952,6 +2086,32 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 }`}>
                   {currentUser.role}
                 </span>
+
+                {/* Battery Status Badge */}
+                {batteryLevel !== null && (
+                  <div
+                    title={`Baterai Kasir: ${batteryLevel}% ${isCharging ? '(Sedang Diisi Daya / Charging)' : ''}`}
+                    className={`hidden xs:flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold border transition ${
+                      isCharging
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-500/60'
+                        : batteryLevel <= 15
+                        ? 'bg-red-600 text-white border-red-400 animate-pulse font-black'
+                        : batteryLevel <= 30
+                        ? 'bg-amber-950 text-amber-300 border-amber-500/50'
+                        : 'bg-slate-900 text-slate-300 border-slate-700'
+                    }`}
+                  >
+                    {isCharging ? (
+                      <BatteryCharging className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                    ) : batteryLevel <= 15 ? (
+                      <BatteryLow className="w-3.5 h-3.5 text-white" />
+                    ) : (
+                      <Battery className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                    <span className="font-mono">{batteryLevel}%</span>
+                    {isCharging && <span className="text-[9px] text-emerald-400">⚡</span>}
+                  </div>
+                )}
               </div>
               <p className="text-[10px] sm:text-[11px] text-slate-300 font-semibold truncate leading-tight flex items-center gap-1">
                 <span>👤 {currentUser.name}</span>
@@ -2252,6 +2412,41 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
         {/* TAB 1: KASIR / POS */}
         {activeTab === 'pos' && (
           <div className="space-y-4">
+            {/* CRITICAL LOW BATTERY RED WARNING BANNER (<15%) */}
+            {batteryLevel !== null && batteryLevel <= 15 && !isCharging && !dismissBatteryWarning && (
+              <div className="bg-red-600 text-white rounded-2xl p-4 shadow-xl border-2 border-red-400 animate-pulse flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start space-x-3">
+                  <div className="bg-red-950/80 p-2.5 rounded-xl shrink-0 border border-red-500/50 mt-0.5">
+                    <BatteryWarning className="w-6 h-6 text-amber-300 animate-bounce" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="bg-red-950 font-black text-amber-300 text-[10px] px-2 py-0.5 rounded-md uppercase tracking-wider border border-red-800">
+                        ⚠️ PERINGATAN BATERAI LEMAH ({batteryLevel}%)
+                      </span>
+                      <span className="text-xs text-red-100 font-bold hidden sm:inline">Perhatian Kasir Mobile</span>
+                    </div>
+                    <h4 className="text-sm sm:text-base font-black text-white mt-1">
+                      Baterai HP / Mesin Kasir Tinggal {batteryLevel}%! Segera Colokkan Charger.
+                    </h4>
+                    <p className="text-xs text-red-100 mt-0.5 leading-relaxed font-medium">
+                      Harap sambungkan pengisi daya untuk mencegah perangkat mati mendadak saat melayani transaksi kasir di jam sibuk toko.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => setDismissBatteryWarning(true)}
+                    className="bg-red-950 hover:bg-red-900 text-red-100 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-red-800 cursor-pointer shadow-sm"
+                  >
+                    <X className="w-4 h-4" />
+                    <span>Sembunyikan Warning</span>
+                  </button>
+                </div>
+              </div>
+            )}
             {/* MOBILE QUICK TOTAL BAR (Visible on small screens <lg) - Directs senior cashier eyes directly to current Total Belanja */}
             <div
               ref={totalBelanjaMobileRef}
@@ -2562,7 +2757,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       </div>
                     ) : (
                       cart.map(item => (
-                        <div key={item.product.id} className="bg-white p-3 rounded-xl border-2 border-slate-800 shadow-xs flex flex-col space-y-2">
+                        <div key={item.product.id} className="bg-white p-3 rounded-xl border-2 border-slate-800 shadow-xs flex flex-col space-y-2 animate-cart-item-enter">
                           {/* Line 1: Full Nama Barang without being overlapped by quantity/price (Request 6) */}
                           <div className="flex items-start justify-between gap-2 border-b border-slate-200 pb-1.5">
                             <h4 className="text-sm sm:text-base font-black text-slate-950 leading-snug break-words flex-1">
@@ -3806,6 +4001,65 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               </div>
             </div>
 
+            {/* Security & Authentication Documentation Card */}
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-5 text-white space-y-4 shadow-xl">
+              <div className="flex items-center space-x-3 pb-3 border-b border-slate-800">
+                <div className="bg-rose-500/20 text-rose-400 p-2.5 rounded-xl border border-rose-500/30">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-rose-300">
+                    🔒 Keamanan Sistem: Sesi Login & Anti-Brute Force
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Dokumentasi perlindungan akun kasir & admin serta aturan sesi kerja digital.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Sesi Login */}
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                    <Clock className="w-4 h-4 text-amber-400" />
+                    <span>⏱️ Masa Berlaku Sesi Login (8 Jam / 480 Menit)</span>
+                  </div>
+                  <ul className="text-xs text-slate-300 space-y-2 list-disc pl-4 leading-relaxed font-medium">
+                    <li>
+                      <strong>Durasi Aktif (8 Jam / 480 Menit):</strong> Disesuaikan dengan 1 shift standar jam kerja kasir toko. Selama masih dalam rentang 8 jam, kasir/admin tidak perlu mengulang login jika aplikasi ditutup atau di-refresh.
+                    </li>
+                    <li>
+                      <strong>Otomatis Kadaluarsa (Auto Expire):</strong> Setelah 8 jam berlalu sejak waktu login, sesi akan secara otomatis hangus demi keamanan data toko, dan sistem akan meminta login ulang.
+                    </li>
+                    <li>
+                      <strong>Manual Logout:</strong> Kasir/Admin juga dapat mengakhiri sesi kapan saja melalui tombol "Keluar / Logout Akun" di MENU ▾.
+                    </li>
+                  </ul>
+                </div>
+
+                {/* 2. Anti Brute Force */}
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+                    <Key className="w-4 h-4 text-rose-400" />
+                    <span>🛡️ Sistem Perlindungan Anti-Brute Force</span>
+                  </div>
+                  <ul className="text-xs text-slate-300 space-y-2 list-disc pl-4 leading-relaxed font-medium">
+                    <li>
+                      <strong>Batas Gagal Login (Max 5x):</strong> Pengguna diberikan kesempatan salah mengisikan password/username maksimal 5 kali. Setiap kali salah, indikator jumlah kesalahan akan muncul di layar.
+                    </li>
+                    <li>
+                      <strong>Penguncian Otomatis (Lockout 60 Detik):</strong> Pada percobaan gagal ke-5, sistem secara otomatis MENGUNCI SEMENTARA AKSI LOGIN SELAMA 60 DETIK. Formulir input dan tombol login dinonaktifkan dengan timer hitung mundur.
+                    </li>
+                    <li>
+                      <strong>Perlindungan Lapis Ganda (Dual-Layer):</strong>
+                      <br />• <em>Frontend UI Layer:</em> Memblokir interaksi tombol login di browser.
+                      <br />• <em>Backend Server API Layer (Rate Limiter):</em> Server API memblokir permintaan login berulang dari IP yang sama (HTTP 429).
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
             {/* Automatic D1 Database Bootstrap Card */}
             <div className="bg-emerald-950 border-3 border-emerald-500 rounded-2xl p-5 text-white space-y-3 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -4202,6 +4456,196 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               </div>
             </div>
 
+            {/* 4. Preferensi Printer Thermal (Ukuran Kertas 58mm / 80mm) */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Printer className="w-5 h-5 text-rose-600" />
+                    <span>Preferensi Printer Thermal & Ukuran Kertas Roll</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Sesuaikan lebar cetakan struk otomatis dengan jenis mesin printer thermal kasir Anda.
+                  </p>
+                </div>
+                <span className="text-xs bg-rose-50 text-rose-700 font-bold px-3 py-1 rounded-full border border-rose-200 self-start sm:self-auto">
+                  Mode Aktif: {thermalPaperWidth}
+                </span>
+              </div>
+
+              {/* Radio Selection: 58mm vs 80mm */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div
+                  onClick={() => {
+                    setThermalPaperWidth('58mm');
+                    localStorage.setItem('tokobazar_thermal_paper_width', '58mm');
+                    showAlert('Ukuran kertas printer thermal diset ke 58mm (Portabel / Mini)', 'success');
+                  }}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition flex items-start space-x-3 ${
+                    thermalPaperWidth === '58mm'
+                      ? 'border-rose-600 bg-rose-50/70 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300 bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="thermalWidthSetting"
+                    checked={thermalPaperWidth === '58mm'}
+                    onChange={() => {}}
+                    className="mt-1 text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <div className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                      <span>🧾 Kertas Roll 58mm (Portabel / Mini)</span>
+                      <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.5 rounded">Paling Populer</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      Ukuran kertas kasir portabel Bluetooth (58mm / 32 karakter per baris). Hemat kertas dan pas untuk printer kasir mini mobile.
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setThermalPaperWidth('80mm');
+                    localStorage.setItem('tokobazar_thermal_paper_width', '80mm');
+                    showAlert('Ukuran kertas printer thermal diset ke 80mm (Desktop / Standar)', 'info');
+                  }}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition flex items-start space-x-3 ${
+                    thermalPaperWidth === '80mm'
+                      ? 'border-rose-600 bg-rose-50/70 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300 bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="thermalWidthSetting"
+                    checked={thermalPaperWidth === '80mm'}
+                    onChange={() => {}}
+                    className="mt-1 text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <div className="font-bold text-sm text-slate-900">
+                      🧾 Kertas Roll 80mm (Desktop / Standar Kasir)
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      Ukuran kertas kasir standar supermarket / restoran (80mm / 48 karakter per baris). Tulisan lebih lebar dan lega.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Test Print Sample Receipt Action */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-xs text-slate-600">
+                  <span className="font-bold block text-slate-800">🧪 Tes Cetak Printer (Sample Receipt)</span>
+                  <span>Uji coba koneksi dan kerapihan hasil cetakan langsung ke printer thermal Anda.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sampleTx: Transaction = {
+                      id: 999999,
+                      invoice_no: 'INV/TEST/' + Date.now().toString().slice(-4),
+                      subtotal_amount: 50000,
+                      discount_amount: 5000,
+                      tax_amount: 0,
+                      total_amount: 45000,
+                      paid_amount: 50000,
+                      change_amount: 5000,
+                      cashier_name: cashierName || 'Kasir Penguji',
+                      created_at: new Date().toISOString(),
+                      items: [
+                        { product_name: 'Minyak Goreng 1L (Tes)', price: 20000, quantity: 1, subtotal: 20000 },
+                        { product_name: 'Beras Premium 2kg (Tes)', price: 30000, quantity: 1, subtotal: 30000 }
+                      ]
+                    };
+                    setCompletedTx(sampleTx);
+                    setShowReceiptModal(true);
+                  }}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition shadow-sm self-start sm:self-auto cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Coba Cetak Struk Sampel ({thermalPaperWidth})</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 5. Status Baterai Perangkat & Sensor Otomatis */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <BatteryCharging className="w-5 h-5 text-emerald-600" />
+                    <span>Pemantau Baterai HP & Mesin Kasir Mobile</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Sistem mendeteksi tingkat daya baterai secara real-time untuk mencegah HP mati mendadak saat transaksi jam sibuk.
+                  </p>
+                </div>
+                {batteryLevel !== null && (
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full border self-start sm:self-auto ${
+                    isCharging
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : batteryLevel <= 15
+                      ? 'bg-red-50 text-red-700 border-red-300 animate-pulse'
+                      : 'bg-slate-100 text-slate-800 border-slate-200'
+                  }`}>
+                    {isCharging ? '⚡ Status: Sedang Diisi Daya' : `🔋 Daya Sisa: ${batteryLevel}%`}
+                  </span>
+                )}
+              </div>
+
+              {batterySupported ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-1">
+                    <span className="text-xs text-slate-500 font-medium block">Kapasitas Baterai Saat Ini</span>
+                    <span className="text-xl font-black text-slate-900 font-mono">
+                      {batteryLevel !== null ? `${batteryLevel}%` : 'Memuat...'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-1">
+                    <span className="text-xs text-slate-500 font-medium block">Status Pengisian Daya</span>
+                    <span className={`text-sm font-bold block ${isCharging ? 'text-emerald-700' : 'text-slate-800'}`}>
+                      {isCharging ? '⚡ Terhubung ke Charger' : '🔋 Menggunakan Baterai'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-1">
+                    <span className="text-xs text-slate-500 font-medium block">Aturan Peringatan Dini</span>
+                    <span className="text-xs font-bold text-red-600 block">
+                      ⚠️ Warning muncul jika &le; 15%
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+                  <span>ℹ️ Peramban browser ini tidak mendukung Battery Status API, namun pemantauan daya tetap aman.</span>
+                </div>
+              )}
+
+              {/* Simulation Action */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2">
+                <div className="text-xs text-slate-600">
+                  <span className="font-bold block text-slate-800">🧪 Simulasi Peringatan Baterai Lemah (&le;15%)</span>
+                  <span>Uji tampilan spanduk merah peringatan baterai lemah untuk kasir.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatteryLevel(12);
+                    setIsCharging(false);
+                    setDismissBatteryWarning(false);
+                    showAlert('Simulasi baterai 12% aktif. Buka menu Hitung untuk melihat spanduk warning merah.', 'info');
+                  }}
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition shadow-xs cursor-pointer shrink-0"
+                >
+                  Tes Warning (12%)
+                </button>
+              </div>
+            </div>
+
             {/* Finish Button */}
             <div className="pt-2">
               <button
@@ -4358,29 +4802,39 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
       {/* RECEIPT MODAL */}
       {showReceiptModal && completedTx && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 animate-modal-pop relative overflow-hidden">
             {/* Printable Receipt Container */}
-            <div ref={receiptRef} id="receipt-print-area" className="bg-white p-2 space-y-3">
+            <div ref={receiptRef} id="receipt-print-area" className={`bg-white p-2 space-y-3 receipt-${thermalPaperWidth} relative`}>
               <div className="text-center pb-3 border-b border-dashed border-slate-300">
                 <div className="bg-rose-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2 text-rose-600">
                   <Store className="w-6 h-6" />
                 </div>
-                <h3 className="font-black text-lg text-slate-900">TOKO BAZAR</h3>
+                <h3 className="font-black text-lg text-slate-900">{storeName || 'TOKO BAZAR'}</h3>
                 <p className="text-xs text-slate-500">Struk Pembayaran Belanja Pelanggan</p>
               </div>
 
-              <div className="text-xs space-y-1 font-mono text-slate-600">
-                <div className="flex justify-between">
-                  <span>No. Inv:</span>
-                  <span className="font-bold text-slate-900">{completedTx.invoice_no}</span>
+              {/* Stamp LUNAS Visual Badge with Smooth Stamp Animation */}
+              <div className="relative">
+                <div className="absolute right-1 top-0 pointer-events-none select-none animate-stamp z-10 opacity-0">
+                  <div className="border-2 border-emerald-600 border-dashed rounded-lg px-2 py-0.5 text-emerald-700 font-black tracking-wider uppercase -rotate-12 bg-emerald-50/90 shadow-2xs flex flex-col items-center leading-none">
+                    <span className="text-[8px] tracking-normal font-bold text-emerald-800">PEMBAYARAN</span>
+                    <span className="text-xs font-black text-emerald-700">✓ LUNAS</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span>Tanggal:</span>
-                  <span>{new Date(completedTx.created_at).toLocaleString('id-ID')}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Kasir:</span>
-                  <span>{completedTx.cashier_name}</span>
+
+                <div className="text-xs space-y-1 font-mono text-slate-600 pr-16">
+                  <div className="flex justify-between">
+                    <span>No. Inv:</span>
+                    <span className="font-bold text-slate-900">{completedTx.invoice_no}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Tanggal:</span>
+                    <span>{new Date(completedTx.created_at).toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Kasir:</span>
+                    <span>{completedTx.cashier_name}</span>
+                  </div>
                 </div>
               </div>
 
@@ -4455,8 +4909,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               </div>
               <div className="flex space-x-2">
                 <button
-                  onClick={() => window.print()}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition"
+                  onClick={() => printThermalReceipt()}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition shadow-sm cursor-pointer"
                 >
                   <Printer className="w-4 h-4" />
                   <span>Cetak Thermal</span>
