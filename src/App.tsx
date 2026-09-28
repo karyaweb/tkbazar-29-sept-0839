@@ -174,16 +174,71 @@ export default function App() {
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   const sanitizeErrorMessage = (rawMessage: string): string => {
-    if (!rawMessage) return 'Terjadi kesalahan pada sistem.';
+    if (!rawMessage) return '⚠️ Terjadi kendala pada sistem. Silakan coba muat ulang halaman.';
     const str = String(rawMessage);
+
+    // 1. Duplicate Barcode Error
     if (
-      str.includes('UNIQUE constraint failed') ||
-      str.includes('SQLITE_CONSTRAINT') ||
-      str.includes('products.barcode') ||
-      str.includes('D1_ERROR')
+      str.includes('UNIQUE constraint failed: products.barcode') ||
+      (str.includes('products') && str.includes('barcode') && (str.includes('UNIQUE') || str.includes('CONSTRAINT'))) ||
+      str.includes('Barcode sudah terdaftar') ||
+      str.includes('Barcode sudah digunakan')
     ) {
-      return '⚠️ BARCODE SUDAH DIPAKAI! Nomor barcode ini sudah terdaftar untuk barang lain. Silakan gunakan nomor barcode yang berbeda atau edit barang yang sudah ada.';
+      return '⚠️ KODE BARCODE SUDAH DIPAKAI!\n\nNomor barcode ini sudah terdaftar untuk barang lain. Silakan gunakan nomor barcode yang berbeda atau edit barang yang sudah ada.';
     }
+
+    // 2. Duplicate Invoice Error
+    if (
+      str.includes('UNIQUE constraint failed: transactions.invoice_no') ||
+      (str.includes('transactions') && str.includes('invoice_no'))
+    ) {
+      return '⚠️ NOMOR NOTA TRANSAKSI TERDAPAT DUPLIKAT!\n\nSistem akan secara otomatis memperbarui nomor nota baru untuk transaksi berikutnya.';
+    }
+
+    // 3. Missing Table Error (Database not bootstrapped yet)
+    if (
+      str.includes('no such table') ||
+      str.includes('table products') ||
+      str.includes('table transactions') ||
+      str.includes('table transaction_items')
+    ) {
+      return '⚠️ TABEL DATABASE D1 BELUM SIAP!\n\nTabel database Cloudflare D1 belum terbuat. Silakan buka menu "? (Petunjuk PWA & Bantuan)" di atas lalu tekan tombol "⚡ Bootstrap Database D1 Sekarang" untuk menyiapkan tabel otomatis.';
+    }
+
+    // 4. Missing Column / Schema Mismatch
+    if (str.includes('no such column') || str.includes('has no column')) {
+      return '⚠️ STRUKTUR KOLOM DATABASE PERLU DIPERBARUI!\n\nSilakan buka menu "? (Petunjuk PWA & Bantuan)" lalu tekan tombol "⚡ Bootstrap Database D1 Sekarang" untuk memperbarui struktur tabel.';
+    }
+
+    // 5. Cloudflare D1 Binding / Connection Error
+    if (
+      str.includes('D1 binding') ||
+      str.includes('env.DB') ||
+      str.includes('binding') ||
+      str.includes('D1_BINDING_NOT_FOUND')
+    ) {
+      return '⚠️ KONEKSI CLOUDFLARE D1 BELUM TERHUBUNG!\n\nAplikasi belum terhubung dengan database Cloudflare D1. Silakan periksa konfigurasi D1 (env.DB) Anda di Cloudflare Dashboard.';
+    }
+
+    // 6. Network / Offline Error
+    if (
+      str.includes('Failed to fetch') ||
+      str.includes('NetworkError') ||
+      str.includes('Network request failed') ||
+      str.includes('Load failed') ||
+      str.includes('Offline')
+    ) {
+      return '📡 INTERNET TERPUTUS ATAU SERVER TIDAK MERESPON!\n\nJangan khawatir, data transaksi Anda disimpan otomatis di penyimpanan lokal HP/PC Anda dan akan disinkronkan saat internet terhubung kembali.';
+    }
+
+    // 7. Not Null / Datatype mismatch Error
+    if (
+      str.includes('NOT NULL constraint failed') ||
+      str.includes('datatype mismatch')
+    ) {
+      return '⚠️ MOHON LENGKAPI SELURUH ISIAN!\n\nPastikan nama barang, barcode, dan angka harga telah terisi dengan benar (berupa angka tanpa huruf).';
+    }
+
     return str;
   };
 
