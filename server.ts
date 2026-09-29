@@ -31,6 +31,8 @@ interface Transaction {
   subtotal_amount?: number;
   discount_amount?: number;
   tax_amount?: number;
+  tax_type?: 'rp' | 'pct';
+  tax_value?: string;
   admin_fee_amount?: number;
   total_amount: number;
   paid_amount: number;
@@ -396,6 +398,12 @@ async function startServer() {
         if (tx.admin_fee_amount === undefined) {
           tx.admin_fee_amount = 0;
         }
+        if (!tx.tax_type) {
+          tx.tax_type = 'rp';
+        }
+        if (tx.tax_value === undefined) {
+          tx.tax_value = '0';
+        }
       });
     }
     if (!db.expenses) {
@@ -405,7 +413,7 @@ async function startServer() {
     saveDb(db);
     res.json({
       success: true,
-      message: 'Database berhasil di-bootstrap dengan tabel user, produk, expenses (pengeluaran), serta kolom QRIS & Catatan!',
+      message: 'Database berhasil di-bootstrap dengan tabel user, produk, expenses (pengeluaran), serta kolom QRIS, Biaya Admin, Pajak (tax_type/value), & Catatan!',
       seeded
     });
   });
@@ -424,6 +432,8 @@ async function startServer() {
       subtotal_amount,
       discount_amount,
       tax_amount,
+      tax_type,
+      tax_value,
       admin_fee_amount,
       total_amount,
       paid_amount,
@@ -444,6 +454,8 @@ async function startServer() {
       subtotal_amount: subtotal_amount !== undefined ? Number(subtotal_amount) : undefined,
       discount_amount: discount_amount !== undefined ? Number(discount_amount) : undefined,
       tax_amount: tax_amount !== undefined ? Number(tax_amount) : undefined,
+      tax_type: tax_type || 'rp',
+      tax_value: tax_value !== undefined ? String(tax_value) : '0',
       admin_fee_amount: admin_fee_amount !== undefined ? Number(admin_fee_amount) : 0,
       total_amount: Number(total_amount),
       paid_amount: Number(paid_amount),

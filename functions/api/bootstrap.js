@@ -42,6 +42,8 @@ export async function onRequestPost(context) {
           subtotal_amount REAL,
           discount_amount REAL,
           tax_amount REAL,
+          tax_type TEXT DEFAULT 'rp',
+          tax_value TEXT DEFAULT '0',
           total_amount REAL NOT NULL,
           paid_amount REAL NOT NULL,
           change_amount REAL NOT NULL,
@@ -91,6 +93,16 @@ export async function onRequestPost(context) {
       await db.prepare("ALTER TABLE transactions ADD COLUMN admin_fee_amount REAL DEFAULT 0").run();
     } catch (e) {
       // Column admin_fee_amount may already exist
+    }
+    try {
+      await db.prepare("ALTER TABLE transactions ADD COLUMN tax_type TEXT DEFAULT 'rp'").run();
+    } catch (e) {
+      // Column tax_type may already exist
+    }
+    try {
+      await db.prepare("ALTER TABLE transactions ADD COLUMN tax_value TEXT DEFAULT '0'").run();
+    } catch (e) {
+      // Column tax_value may already exist
     }
 
     // 2. Check & Seed Users

@@ -195,9 +195,11 @@ export default function App() {
         const base64String = reader.result as string;
         setQrisImage(base64String);
         localStorage.setItem('qris_image_base64', base64String);
-        showAlert('✅ Gambar QRIS toko berhasil disimpan!', 'success');
+        showAlert('✅ Gambar QRIS toko berhasil diperbarui & ditimpa dengan gambar baru!', 'success');
       };
       reader.readAsDataURL(file);
+      // Reset input value so re-uploading or replacing with another image always triggers cleanly
+      e.target.value = '';
     }
   };
 
@@ -853,19 +855,24 @@ export default function App() {
     fetchExpenses();
   }, []);
 
-  // Audio Beep Effect on Barcode Scan
+  // Audio Beep Effect on Barcode Scan - High-Pitch Crisp Retail Scanner Chime
   const playBeepSound = () => {
     if (!soundEnabled) return;
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+      // High frequency (2200 Hz to 2450 Hz) for a sharp, crisp cashier confirmation beep
+      osc.frequency.setValueAtTime(2200, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(2450, ctx.currentTime + 0.04);
+      gain.gain.setValueAtTime(0.35, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.12);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
@@ -1990,7 +1997,7 @@ export default function App() {
       ? `Pajak / Biaya  : +${formatRupiah(completedTx.tax_amount)} (${completedTx.tax_type === 'pct' ? `${completedTx.tax_value}%` : 'Rp'})\n`
       : '';
 
-    const message = `*STRUK BELANJA - TOKO BAZAR*
+    const message = `*STRUK BELANJA - ${(storeName || 'TOKO BAZAR').toUpperCase()}*
 ---------------------------------------
 No. Inv : ${completedTx.invoice_no}
 Tanggal : ${new Date(completedTx.created_at).toLocaleString('id-ID')}
@@ -2000,10 +2007,10 @@ Kasir   : ${completedTx.cashier_name}
 ${itemsList}
 ---------------------------------------
 ${subtotalText}${discountText}${taxText}*Total Belanja : ${formatRupiah(completedTx.total_amount)}*
-Tunai Dibayar  : ${formatRupiah(completedTx.paid_amount)}
-Kembalian      : ${formatRupiah(completedTx.change_amount)}
----------------------------------------
-Terima kasih telah berbelanja di TokoBazar! 🙏`;
+${(completedTx.payment_method || '').toUpperCase() === 'QRIS' ? `Metode Bayar   : QRIS / Non-Tunai\nNominal Bayar  : ${formatRupiah(completedTx.paid_amount)}\nKembalian      : Rp 0 (Non-Tunai)\n` : `Tunai Dibayar  : ${formatRupiah(completedTx.paid_amount)}\nKembalian      : ${formatRupiah(completedTx.change_amount)}\n`}${completedTx.notes ? `Catatan/Ref    : ${completedTx.notes}\n` : ''}---------------------------------------
+Terima kasih telah berbelanja di ${storeName || 'TokoBazar'}! 🙏
+
+Ingin system kasir seperti ini atau yang sesuai kebutuhan anda? Hubungi WA +628997886061`;
 
     const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
     const a = document.createElement('a');
@@ -2094,7 +2101,10 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               }
               escpos += divider;
               escpos += '\x1B\x61\x01'; // Center alignment
-              escpos += 'Terima Kasih Telah Berbelanja!\n\n\n\n';
+              escpos += 'Terima Kasih Telah Berbelanja!\n';
+              escpos += 'Barang yang sudah dibeli\ntidak dapat ditukar/dikembalikan\n';
+              escpos += divider;
+              escpos += 'Ingin system kasir seperti ini\natau yang sesuai kebutuhan anda?\nHubungi WA +628997886061\n\n\n\n';
               escpos += '\x1D\x56\x41\x03'; // Paper cut
 
               const data = encoder.encode(escpos);
@@ -2413,10 +2423,15 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               {storeName}
             </h1>
-            <div className="inline-flex items-center gap-1.5 bg-slate-900 border border-slate-700 px-3.5 py-1 rounded-full text-xs font-bold text-rose-300">
-              <Lock className="w-3.5 h-3.5 text-amber-400" />
-              <span>Akses Terproteksi Login Kasir & Admin</span>
-            </div>
+            <a
+              href="https://wa.me/628997886061?text=Halo%2C%20saya%20tertarik%20dengan%20sistem%20kasir%20TokoBazar"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 bg-emerald-950/80 border border-emerald-500/60 hover:border-emerald-400 hover:bg-emerald-900 px-3.5 py-1.5 rounded-full text-xs font-bold text-emerald-300 transition shadow-sm cursor-pointer"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Ingin system kasir seperti ini? Hubungi WA +628997886061</span>
+            </a>
             <p className="text-xs text-slate-400 max-w-xs mx-auto">
               Silakan login terlebih dahulu untuk mengakses sistem kalkulator kasir dan kelola toko.
             </p>
@@ -2553,9 +2568,21 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
             </div>
           </div>
 
-          <div className="text-center text-[11px] text-slate-500 font-medium">
-            TokoBazar POS • Kasir & Manajemen Toko Digital
-          </div>
+          {/* Footer Kontak Pembuatan Sistem */}
+          <footer className="pt-2 text-center">
+            <a
+              href="https://wa.me/628997886061?text=Halo%2C%20saya%20tertarik%20dengan%20sistem%20kasir%20seperti%20ini%20atau%20yang%20sesuai%20kebutuhan%20saya"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 bg-slate-900/90 hover:bg-slate-800 text-emerald-400 hover:text-emerald-300 font-bold px-4 py-2.5 rounded-2xl border border-slate-700/80 hover:border-emerald-500/50 shadow-md transition text-xs sm:text-sm leading-snug text-center cursor-pointer"
+            >
+              <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Ingin system kasir seperti ini atau yang sesuai kebutuhan anda? Hubungi WA +628997886061</span>
+            </a>
+            <div className="text-[11px] text-slate-500 font-medium mt-3">
+              TokoBazar POS • Kasir & Manajemen Toko Digital
+            </div>
+          </footer>
         </div>
 
         {/* TOAST & CONFIRM MODAL ALSO RENDERABLE ON LOGIN SCREEN */}
@@ -2714,11 +2741,11 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
         {/* Senior-Friendly MENU Drawer / Modal Overlay */}
         {menuDropdownOpen && (
           <div 
-            className="fixed inset-0 z-50 flex items-start justify-end sm:justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-xs"
+            className="fixed inset-0 z-50 flex items-start justify-end sm:justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-xs overflow-y-auto overflow-x-hidden"
             onClick={() => setMenuDropdownOpen(false)}
           >
             <div 
-              className="bg-slate-900 border-2 border-slate-700 text-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-4 sm:p-5 space-y-4"
+              className="bg-slate-900 border-2 border-slate-700 text-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[92vh] overflow-y-auto overflow-x-auto p-4 sm:p-5 space-y-4 my-auto overscroll-contain"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -5604,7 +5631,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     ⚡ Inisialisasi / Bootstrap Tabel D1 Otomatis
                   </h3>
                   <p className="text-xs text-slate-200 mt-1 max-w-xl">
-                    Jika database Cloudflare D1 Anda masih kosong atau belum memiliki kolom <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">payment_method</code> (QRIS / Tunai) dan <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">notes</code> (Catatan / ID Ref QRIS), klik tombol ini untuk menjalankan inisialisasi tabel dan migrasi kolom QRIS otomatis tanpa menghapus data produk Anda.
+                    Jika database Cloudflare D1 Anda masih kosong atau belum memiliki kolom <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">payment_method</code> (QRIS / Tunai), <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">notes</code> (Catatan Ref), <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">admin_fee_amount</code>, <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">tax_type</code>, dan <code className="bg-slate-900 text-emerald-300 px-1 py-0.5 rounded font-mono">tax_value</code>, klik tombol ini untuk menjalankan inisialisasi tabel dan migrasi kolom otomatis tanpa menghapus data produk Anda.
                   </p>
                 </div>
                 <button
@@ -5620,7 +5647,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   ) : (
                     <>
                       <Zap className="w-4 h-4 text-slate-950 fill-slate-950" />
-                      <span>⚡ Bootstrap Database D1 (Termasuk QRIS & Catatan)</span>
+                      <span>⚡ Bootstrap Database D1 (Tabel, QRIS, Pajak & Catatan)</span>
                     </>
                   )}
                 </button>
@@ -6020,23 +6047,35 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   </div>
                   <div>
                     <span className="font-bold text-sm text-slate-800 block">
-                      {qrisImage ? 'Ganti Gambar QRIS Toko' : 'Pilih / Unggah Gambar QRIS Toko'}
+                      {qrisImage ? 'Ganti / Timpa Gambar QRIS Toko' : 'Pilih / Unggah Gambar QRIS Toko'}
                     </span>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Pilih file gambar QRIS dari galeri HP atau folder laptop Anda (Maksimal 5MB)
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                      Unggah file gambar kode QRIS toko Anda (PNG, JPG, WEBP maks 5MB). Jika ada gambar QR baru milik toko, Anda bisa mengunggahnya kapan saja di sini dan gambar lama <strong>akan langsung otomatis ditimpa (diupdate)</strong>.
                     </p>
                   </div>
 
-                  <label className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl cursor-pointer shadow-sm transition">
-                    <Upload className="w-4 h-4" />
-                    <span>{qrisImage ? 'Pilih Gambar Baru' : 'Unggah File Gambar QRIS'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleQrisImageUpload}
-                      className="hidden"
-                    />
-                  </label>
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    <label className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl cursor-pointer shadow-sm transition">
+                      <Upload className="w-4 h-4" />
+                      <span>{qrisImage ? 'Pilih & Timpa dengan QR Baru' : 'Unggah File Gambar QRIS'}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/*"
+                        onChange={handleQrisImageUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {qrisImage && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveQrisImage}
+                        className="inline-flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs px-3.5 py-2.5 rounded-xl border border-red-200 transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                        <span>Hapus QRIS</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Preview Box */}
@@ -6444,10 +6483,25 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
         )}
       </main>
 
+      {/* Universal Bottom Footer on All Screens/Tabs */}
+      <footer className="w-full bg-slate-900 border-t-2 border-slate-800 py-3.5 px-3 text-center shrink-0 mt-auto">
+        <div className="max-w-7xl mx-auto flex items-center justify-center">
+          <a
+            href="https://wa.me/628997886061?text=Halo%2C%20saya%20tertarik%20dengan%20sistem%20kasir%20seperti%20ini%20atau%20yang%20sesuai%20kebutuhan%20saya"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 text-emerald-400 hover:text-emerald-300 bg-slate-950/80 hover:bg-slate-950 border border-slate-700 hover:border-emerald-500/50 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition shadow-sm cursor-pointer"
+          >
+            <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="text-center">Ingin system kasir seperti ini atau yang sesuai kebutuhan anda? Hubungi WA +628997886061</span>
+          </a>
+        </div>
+      </footer>
+
       {/* PRODUCT MODAL (Add / Edit Barang / Jasa) */}
       {productModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5 overflow-y-auto overflow-x-hidden">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto overflow-x-auto p-5 sm:p-6 space-y-4 my-auto overscroll-contain">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-bold text-slate-900 text-lg">
                 {editingProductId ? 'Edit Barang / Jasa' : 'Tambah Barang / Jasa Baru'}
@@ -6581,8 +6635,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
       {/* RECEIPT MODAL */}
       {showReceiptModal && completedTx && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 animate-modal-pop relative overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto overflow-x-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full max-h-[92vh] overflow-y-auto overflow-x-auto p-4 sm:p-6 space-y-4 animate-modal-pop relative my-auto overscroll-contain">
             {/* Printable Receipt Container */}
             <div ref={receiptRef} id="receipt-print-area" className={`bg-white p-2 space-y-3 receipt-${thermalPaperWidth} relative`}>
               <div className="text-center pb-3 border-b border-dashed border-slate-300">
@@ -6710,9 +6764,14 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 )}
               </div>
 
-              <div className="text-center pt-3 border-t border-dashed border-slate-300 text-xs text-slate-400">
-                <p className="font-medium text-slate-600">Terima Kasih Telah Berbelanja!</p>
-                <p className="mt-0.5">Barang yang sudah dibeli tidak dapat ditukar/dikembalikan.</p>
+              <div className="text-center pt-3 border-t border-dashed border-slate-300 text-xs text-slate-500 space-y-1.5">
+                <p className="font-semibold text-slate-700">Terima Kasih Telah Berbelanja!</p>
+                <p className="text-[11px] text-slate-400">Barang yang sudah dibeli tidak dapat ditukar/dikembalikan.</p>
+                <div className="pt-2 border-t border-dotted border-slate-300 mt-2">
+                  <p className="text-[10px] text-slate-600 font-bold leading-tight tracking-tight">
+                    Ingin system kasir seperti ini atau yang sesuai kebutuhan anda? Hubungi WA +628997886061
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -6756,8 +6815,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
       {/* IMPORT CSV MODAL */}
       {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto overflow-x-hidden">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto overflow-x-auto p-5 sm:p-6 space-y-4 my-auto overscroll-contain">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 <Upload className="w-5 h-5 text-indigo-600" />
@@ -6840,8 +6899,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
       {/* VIRTUAL NUMPAD MODAL */}
       {numpadOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/75 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border-2 border-slate-300 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/75 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto overflow-x-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full max-h-[92vh] overflow-y-auto overflow-x-auto p-4 sm:p-6 border-2 border-slate-300 space-y-4 my-auto overscroll-contain">
             <div className="flex items-center justify-between pb-3 border-b-2 border-slate-200">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <span>⌨️ Keypad Layar Angka</span>
@@ -6925,8 +6984,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
       {/* USER MANAGEMENT MODAL (ADMIN ONLY) */}
       {userModalOpen && currentUser?.role === 'ADMIN' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3 sm:p-5">
-          <div className="bg-slate-900 border-2 border-slate-700 text-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3 sm:p-5 overflow-y-auto overflow-x-hidden">
+          <div className="bg-slate-900 border-2 border-slate-700 text-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto overflow-x-auto p-5 sm:p-6 space-y-5 my-auto overscroll-contain">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2">
@@ -7124,8 +7183,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
       {/* CASH EXPENSE MODAL (PENGELUARAN KAS TOKO: SAMPAH, LISTRIK, MAKAN, DONASI, PRIVE, DLL) */}
       {expenseModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3 sm:p-5">
-          <div className="bg-slate-900 border-2 border-rose-500/60 text-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3 sm:p-5 overflow-y-auto overflow-x-hidden">
+          <div className="bg-slate-900 border-2 border-rose-500/60 text-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto overflow-x-auto p-5 sm:p-6 space-y-4 my-auto overscroll-contain">
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2.5">
@@ -7260,8 +7319,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
       {/* UNREGISTERED ITEM PROMPT MODAL */}
       {unregisteredItemPrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3">
-          <div className="bg-slate-900 border-2 border-amber-400 text-white rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 animate-modal-pop">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3 overflow-y-auto overflow-x-hidden">
+          <div className="bg-slate-900 border-2 border-amber-400 text-white rounded-3xl shadow-2xl max-w-md w-full max-h-[92vh] overflow-y-auto overflow-x-auto p-5 sm:p-6 space-y-4 animate-modal-pop my-auto overscroll-contain">
             <div className="flex items-center space-x-3 text-amber-300 border-b border-slate-800 pb-3">
               <AlertCircle className="w-7 h-7 text-amber-400 shrink-0" />
               <div>
@@ -7308,11 +7367,11 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
       {/* QRIS STORE IMAGE ZOOM MODAL (POP-UP ZOOM FOR CUSTOMER SCAN) */}
       {qrisZoomModalOpen && qrisImage && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-3 sm:p-5 animate-modal-pop"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-3 sm:p-5 animate-modal-pop overflow-y-auto overflow-x-hidden"
           onClick={() => setQrisZoomModalOpen(false)}
         >
           <div
-            className="bg-white rounded-3xl border-4 border-sky-400 shadow-2xl max-w-md w-full p-5 space-y-4 text-center relative"
+            className="bg-white rounded-3xl border-4 border-sky-400 shadow-2xl max-w-md w-full max-h-[92vh] overflow-y-auto overflow-x-auto p-4 sm:p-5 space-y-4 text-center relative my-auto overscroll-contain"
             onClick={e => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -7359,8 +7418,8 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
 
       {/* IN-APP CONFIRMATION DIALOG */}
       {confirmDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto overflow-x-hidden">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full max-h-[90vh] overflow-y-auto overflow-x-auto p-5 sm:p-6 space-y-4 my-auto overscroll-contain">
             <h3 className="font-bold text-slate-800 text-base">Konfirmasi Aksi</h3>
             <p className="text-sm text-slate-600">{confirmDialog.message}</p>
             <div className="flex justify-end gap-2 pt-2">

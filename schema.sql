@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     subtotal_amount REAL,
     discount_amount REAL,
     tax_amount REAL,
+    tax_type TEXT DEFAULT 'rp',
+    tax_value TEXT DEFAULT '0',
     admin_fee_amount REAL DEFAULT 0,
     total_amount REAL NOT NULL,
     paid_amount REAL NOT NULL,
@@ -76,3 +78,6 @@ INSERT OR IGNORE INTO products (barcode, name, price) VALUES
 -- Perintah Migrasi Kolom untuk Database Cloudflare D1 yang Sudah Berjalan Sebelumnya:
 -- ALTER TABLE transactions ADD COLUMN payment_method TEXT DEFAULT 'TUNAI';
 -- ALTER TABLE transactions ADD COLUMN notes TEXT DEFAULT '';
+-- ALTER TABLE transactions ADD COLUMN admin_fee_amount REAL DEFAULT 0;
+-- ALTER TABLE transactions ADD COLUMN tax_type TEXT DEFAULT 'rp';
+-- ALTER TABLE transactions ADD COLUMN tax_value TEXT DEFAULT '0';
