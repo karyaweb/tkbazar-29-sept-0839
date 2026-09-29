@@ -70,7 +70,10 @@ import {
   Coffee,
   Lightbulb,
   HeartHandshake,
-  TrendingDown
+  TrendingDown,
+  Maximize2,
+  ZoomIn,
+  FileImage
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import html2canvas from 'html2canvas';
@@ -172,6 +175,42 @@ export default function App() {
   const [mobileMarginMode, setMobileMarginMode] = useState<'default' | 'max_width'>(() => {
     return (localStorage.getItem('tokobazar_mobile_margin_mode') as 'default' | 'max_width') || 'default';
   });
+
+  // Store QRIS Image Base64 State & Modal Zoom
+  const [qrisImage, setQrisImage] = useState<string>(() => {
+    return localStorage.getItem('qris_image_base64') || '';
+  });
+  const [qrisZoomModalOpen, setQrisZoomModalOpen] = useState<boolean>(false);
+
+  // FileReader Handler for Store QRIS Image Base64
+  const handleQrisImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showAlert('⚠️ Ukuran file gambar terlalu besar! Maksimal 5MB.', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setQrisImage(base64String);
+        localStorage.setItem('qris_image_base64', base64String);
+        showAlert('✅ Gambar QRIS toko berhasil disimpan!', 'success');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveQrisImage = () => {
+    setConfirmDialog({
+      message: 'Apakah Anda yakin ingin menghapus / reset gambar QRIS toko ini?',
+      onConfirm: () => {
+        setQrisImage('');
+        localStorage.removeItem('qris_image_base64');
+        showAlert('Gambar QRIS toko berhasil dihapus.', 'info');
+      }
+    });
+  };
 
   // Mobile POS Battery Monitor State
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
@@ -3417,192 +3456,222 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     <span className="font-black text-slate-950">{formatRupiah(subtotalAmount)}</span>
                   </div>
 
-                  {/* Toggle Buttons: Diskon & Pajak */}
-                  <div className="flex items-center gap-2 pt-1">
+                  {/* Toggle Buttons: Diskon & Pajak - Touch-Optimized for Vertical Phones */}
+                  <div className="flex gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setShowDiscountSection(!showDiscountSection)}
-                      className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 border shadow-2xs ${
+                      className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-1.5 border shadow-2xs cursor-pointer active:scale-98 min-h-[44px] ${
                         discountAmount > 0
-                          ? 'bg-emerald-100 text-emerald-950 border-emerald-400 ring-1 ring-emerald-400/30'
+                          ? 'bg-emerald-100 text-emerald-950 border-emerald-400 ring-2 ring-emerald-400/40'
                           : showDiscountSection
                           ? 'bg-slate-900 text-white border-slate-800'
                           : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
                       }`}
                     >
-                      <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                      <Tag className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span>{discountAmount > 0 ? `Diskon: -${formatRupiah(discountAmount)}` : 'Diskon'}</span>
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDiscountSection ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showDiscountSection ? 'rotate-180' : ''}`} />
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setShowTaxSection(!showTaxSection)}
-                      className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 border shadow-2xs ${
-                        taxAmount > 0
-                          ? 'bg-indigo-100 text-indigo-950 border-indigo-400 ring-1 ring-indigo-400/30'
-                          : showTaxSection
-                          ? 'bg-slate-900 text-white border-slate-800'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
-                      }`}
-                    >
-                      <Percent className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>{taxAmount > 0 ? `Pajak: +${formatRupiah(taxAmount)}` : 'Pajak'}</span>
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showTaxSection ? 'rotate-180' : ''}`} />
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowTaxSection(!showTaxSection)}
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-1.5 border shadow-2xs cursor-pointer active:scale-98 min-h-[44px] ${
+                          taxAmount > 0
+                            ? 'bg-indigo-100 text-indigo-950 border-indigo-400 ring-2 ring-indigo-400/40'
+                            : showTaxSection
+                            ? 'bg-slate-900 text-white border-slate-800'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
+                        }`}
+                      >
+                        <Percent className="w-4 h-4 text-indigo-600 shrink-0" />
+                        <span>{taxAmount > 0 ? `Pajak: +${formatRupiah(taxAmount)}` : 'Pajak'}</span>
+                        <ChevronDown className={`w-4 h-4 transition-transform ${showTaxSection ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
 
-                  {/* Discount Box (Default Hidden, opened via 'Diskon' button) */}
-                  {showDiscountSection && (
-                    <div className="bg-emerald-50/90 p-3 rounded-xl border-2 border-emerald-300 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
-                          <Tag className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Atur Diskon Potongan Harga</span>
-                        </label>
-                        <div className="flex items-center space-x-1 bg-white border border-emerald-300 rounded-lg p-0.5 shadow-2xs">
-                          <button
-                            type="button"
-                            onClick={() => setDiscountType('rp')}
-                            className={`px-2.5 py-0.5 text-xs font-bold rounded transition ${
-                              discountType === 'rp' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-950'
-                            }`}
-                          >
-                            Rp
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDiscountType('pct')}
-                            className={`px-2.5 py-0.5 text-xs font-bold rounded transition ${
-                              discountType === 'pct' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-950'
-                            }`}
-                          >
-                            %
-                          </button>
-                        </div>
-                      </div>
-                      <div className="relative">
-                        {discountType === 'rp' && <span className="absolute left-3 top-2.5 text-xs font-extrabold text-slate-600">Rp</span>}
-                        <input
-                          type="number"
-                          placeholder={discountType === 'rp' ? "Nominal diskon (Rp)" : "Persentase (0-100%)"}
-                          value={discountValue}
-                          onChange={e => setDiscountValue(e.target.value)}
-                          className={`w-full py-2 bg-white border-2 border-emerald-400 rounded-lg text-slate-950 font-black text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
-                            discountType === 'rp' ? 'pl-9 pr-3' : 'px-3'
-                          }`}
-                        />
-                        {discountType === 'pct' && <span className="absolute right-3 top-2.5 text-xs font-extrabold text-slate-600">%</span>}
-                      </div>
-                      <div className="flex items-center justify-between text-xs pt-0.5">
-                        {discountAmount > 0 ? (
-                          <span className="font-extrabold text-emerald-800">Potongan: - {formatRupiah(discountAmount)}</span>
-                        ) : (
-                          <span className="text-slate-600 text-[11px] font-bold">Ketik nominal atau persen diskon</span>
-                        )}
-                        <div className="flex gap-2">
-                          {discountValue && (
+                    {/* Discount Box (Default Hidden, opened via 'Diskon' button) - Mobile Touch Enhanced */}
+                    {showDiscountSection && (
+                      <div className="bg-emerald-50/95 p-3.5 sm:p-4 rounded-2xl border-2 border-emerald-400 space-y-3 shadow-md animate-modal-pop">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-xs sm:text-sm font-black text-emerald-950 flex items-center gap-1.5">
+                            <Tag className="w-4 h-4 text-emerald-700" />
+                            <span>Atur Diskon Potongan Harga</span>
+                          </label>
+                          <div className="flex items-center space-x-1 bg-white border-2 border-emerald-400 rounded-xl p-0.5 shadow-2xs">
                             <button
                               type="button"
-                              onClick={() => setDiscountValue('')}
-                              className="text-rose-700 hover:underline font-extrabold text-[11px]"
+                              onClick={() => setDiscountType('rp')}
+                              className={`px-3 py-1 text-xs sm:text-sm font-black rounded-lg transition ${
+                                discountType === 'rp' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-950'
+                              }`}
                             >
-                              Reset
+                              Rp
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setShowDiscountSection(false)}
-                            className="text-slate-800 hover:text-slate-950 font-extrabold text-[11px]"
-                          >
-                            Tutup
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => setDiscountType('pct')}
+                              className={`px-3 py-1 text-xs sm:text-sm font-black rounded-lg transition ${
+                                discountType === 'pct' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-950'
+                              }`}
+                            >
+                              %
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
 
-                  {/* Tax Box (Default Hidden, opened via 'Pajak' button) */}
-                  {showTaxSection && (
-                    <div className="bg-indigo-50/90 p-3 rounded-xl border-2 border-indigo-300 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
-                          <Percent className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>Biaya / Pajak (dari total brutto)</span>
-                        </label>
-                        <div className="flex items-center space-x-1 bg-white border border-indigo-300 rounded-lg p-0.5 shadow-2xs">
-                          <button
-                            type="button"
-                            onClick={() => setTaxType('pct')}
-                            className={`px-2.5 py-0.5 text-xs font-bold rounded transition ${
-                              taxType === 'pct' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-950'
+                        <div className="relative">
+                          {discountType === 'rp' && <span className="absolute left-3.5 top-3 text-sm font-black text-slate-600">Rp</span>}
+                          <input
+                            type="number"
+                            placeholder={discountType === 'rp' ? "Nominal diskon (Rp)" : "Persentase (0-100%)"}
+                            value={discountValue}
+                            onChange={e => setDiscountValue(e.target.value)}
+                            className={`w-full py-2.5 bg-white border-2 border-emerald-500 rounded-xl text-slate-950 font-black text-base sm:text-lg focus:outline-none focus:ring-4 focus:ring-emerald-500/20 shadow-inner ${
+                              discountType === 'rp' ? 'pl-10 pr-3' : 'px-3.5'
                             }`}
-                          >
-                            %
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setTaxType('rp')}
-                            className={`px-2.5 py-0.5 text-xs font-bold rounded transition ${
-                              taxType === 'rp' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-950'
-                            }`}
-                          >
-                            Rp
-                          </button>
+                          />
+                          {discountType === 'pct' && <span className="absolute right-3.5 top-3 text-sm font-black text-slate-600">%</span>}
                         </div>
-                      </div>
-                      <div className="relative">
-                        {taxType === 'rp' && <span className="absolute left-3 top-2.5 text-xs font-extrabold text-slate-600">Rp</span>}
-                        <input
-                          type="number"
-                          placeholder={taxType === 'pct' ? "Persentase pajak (misal 11 untuk PPN 11%)" : "Nominal biaya/pajak (Rp)"}
-                          value={taxValue}
-                          onChange={e => setTaxValue(e.target.value)}
-                          className={`w-full py-2 bg-white border-2 border-indigo-400 rounded-lg text-slate-950 font-black text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${
-                            taxType === 'rp' ? 'pl-9 pr-3' : 'px-3'
-                          }`}
-                        />
-                        {taxType === 'pct' && <span className="absolute right-3 top-2.5 text-xs font-extrabold text-slate-600">%</span>}
-                      </div>
-                      <div className="flex items-center justify-between text-xs pt-0.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] text-slate-600 font-bold">Preset:</span>
+
+                        {/* Quick Presets for Diskon */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] font-extrabold text-emerald-900">Pilih Cepat:</span>
                           <button
                             type="button"
-                            onClick={() => { setTaxType('pct'); setTaxValue('11'); }}
-                            className="px-2 py-0.5 rounded bg-white border border-indigo-300 text-indigo-900 text-[11px] font-black hover:bg-indigo-100"
+                            onClick={() => { setDiscountType('pct'); setDiscountValue('5'); }}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-emerald-400 text-emerald-950 text-xs font-black hover:bg-emerald-100 shadow-2xs cursor-pointer"
                           >
-                            PPN 11%
+                            5%
                           </button>
                           <button
                             type="button"
-                            onClick={() => { setTaxType('pct'); setTaxValue('10'); }}
-                            className="px-2 py-0.5 rounded bg-white border border-indigo-300 text-indigo-900 text-[11px] font-black hover:bg-indigo-100"
+                            onClick={() => { setDiscountType('pct'); setDiscountValue('10'); }}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-emerald-400 text-emerald-950 text-xs font-black hover:bg-emerald-100 shadow-2xs cursor-pointer"
                           >
                             10%
                           </button>
-                        </div>
-                        <div className="flex gap-2">
-                          {taxValue && (
-                            <button
-                              type="button"
-                              onClick={() => setTaxValue('')}
-                              className="text-rose-700 hover:underline font-extrabold text-[11px]"
-                            >
-                              Reset
-                            </button>
-                          )}
                           <button
                             type="button"
-                            onClick={() => setShowTaxSection(false)}
-                            className="text-slate-800 hover:text-slate-950 font-extrabold text-[11px]"
+                            onClick={() => { setDiscountType('pct'); setDiscountValue('20'); }}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-emerald-400 text-emerald-950 text-xs font-black hover:bg-emerald-100 shadow-2xs cursor-pointer"
                           >
-                            Tutup
+                            20%
                           </button>
                         </div>
+
+                        <div className="flex items-center justify-between text-xs pt-1 border-t border-emerald-200">
+                          {discountAmount > 0 ? (
+                            <span className="font-black text-emerald-900 text-xs sm:text-sm">Potongan: - {formatRupiah(discountAmount)}</span>
+                          ) : (
+                            <span className="text-slate-600 text-xs font-bold">Ketik nominal / persen diskon</span>
+                          )}
+                          <div className="flex items-center gap-2">
+                            {discountValue && (
+                              <button
+                                type="button"
+                                onClick={() => setDiscountValue('')}
+                                className="text-rose-700 hover:underline font-extrabold text-xs bg-rose-50 px-2 py-1 rounded-md border border-rose-200"
+                              >
+                                Reset
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setShowDiscountSection(false)}
+                              className="bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs px-3 py-1 rounded-lg shadow-2xs"
+                            >
+                              Selesai / Tutup
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+
+                    {/* Tax Box (Default Hidden, opened via 'Pajak' button) - Mobile Touch Enhanced */}
+                    {showTaxSection && (
+                      <div className="bg-indigo-50/95 p-3.5 sm:p-4 rounded-2xl border-2 border-indigo-400 space-y-3 shadow-md animate-modal-pop">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-xs sm:text-sm font-black text-indigo-950 flex items-center gap-1.5">
+                            <Percent className="w-4 h-4 text-indigo-700" />
+                            <span>Biaya / Pajak (dari total brutto)</span>
+                          </label>
+                          <div className="flex items-center space-x-1 bg-white border-2 border-indigo-400 rounded-xl p-0.5 shadow-2xs">
+                            <button
+                              type="button"
+                              onClick={() => setTaxType('pct')}
+                              className={`px-3 py-1 text-xs sm:text-sm font-black rounded-lg transition ${
+                                taxType === 'pct' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-950'
+                              }`}
+                            >
+                              %
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTaxType('rp')}
+                              className={`px-3 py-1 text-xs sm:text-sm font-black rounded-lg transition ${
+                                taxType === 'rp' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-950'
+                              }`}
+                            >
+                              Rp
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="relative">
+                          {taxType === 'rp' && <span className="absolute left-3.5 top-3 text-sm font-black text-slate-600">Rp</span>}
+                          <input
+                            type="number"
+                            placeholder={taxType === 'pct' ? "Persentase pajak (misal 11 untuk PPN 11%)" : "Nominal biaya/pajak (Rp)"}
+                            value={taxValue}
+                            onChange={e => setTaxValue(e.target.value)}
+                            className={`w-full py-2.5 bg-white border-2 border-indigo-500 rounded-xl text-slate-950 font-black text-base sm:text-lg focus:outline-none focus:ring-4 focus:ring-indigo-500/20 shadow-inner ${
+                              taxType === 'rp' ? 'pl-10 pr-3' : 'px-3.5'
+                            }`}
+                          />
+                          {taxType === 'pct' && <span className="absolute right-3.5 top-3 text-sm font-black text-slate-600">%</span>}
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs pt-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] text-indigo-950 font-black">Preset:</span>
+                            <button
+                              type="button"
+                              onClick={() => { setTaxType('pct'); setTaxValue('11'); }}
+                              className="px-2.5 py-1 rounded-lg bg-white border border-indigo-400 text-indigo-950 text-xs font-black hover:bg-indigo-100 shadow-2xs cursor-pointer"
+                            >
+                              PPN 11%
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setTaxType('pct'); setTaxValue('10'); }}
+                              className="px-2.5 py-1 rounded-lg bg-white border border-indigo-400 text-indigo-950 text-xs font-black hover:bg-indigo-100 shadow-2xs cursor-pointer"
+                            >
+                              10%
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {taxValue && (
+                              <button
+                                type="button"
+                                onClick={() => setTaxValue('')}
+                                className="text-rose-700 hover:underline font-extrabold text-xs bg-rose-50 px-2 py-1 rounded-md border border-rose-200"
+                              >
+                                Reset
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setShowTaxSection(false)}
+                              className="bg-indigo-700 hover:bg-indigo-800 text-white font-extrabold text-xs px-3 py-1 rounded-lg shadow-2xs"
+                            >
+                              Selesai / Tutup
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                   {/* Active Discount / Tax line items in summary */}
                   {discountAmount > 0 && !showDiscountSection && (
@@ -3670,10 +3739,12 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   </div>
                 </div>
 
-                {/* Payment & Change Calculator with 1cm Vertical Gap & Dark Violet Box */}
+                {/* Payment & Change Calculator with 1cm Vertical Gap & Dark Violet Box (Wider max 98% when mobileMarginMode is max_width) */}
                 <div
                   style={{ marginTop: '1cm', backgroundColor: '#3b0764', borderColor: '#7e22ce' }}
-                  className="p-4 rounded-2xl border-4 shadow-2xl space-y-3 text-white"
+                  className={`rounded-2xl border-4 shadow-2xl space-y-3 text-white transition-all ${
+                    mobileMarginMode === 'max_width' ? 'w-[98%] mx-auto p-2.5 sm:p-4' : 'w-full p-4'
+                  }`}
                 >
                   {/* Payment Method Selector & Centang QRIS / Transfer */}
                   <div className="space-y-3 pb-3 border-b border-purple-800">
@@ -3684,9 +3755,9 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       <span className={`text-[11px] font-black px-3 py-1 rounded-full border shadow-xs ${
                         paymentMethod === 'QRIS'
                           ? 'bg-sky-400 text-slate-950 border-sky-300 ring-2 ring-sky-300/60'
-                          : 'bg-emerald-500 text-slate-950 border-emerald-300 ring-2 ring-emerald-300/60'
+                          : 'bg-red-800 text-white border-red-500 ring-2 ring-red-400/60'
                       }`}>
-                        {paymentMethod === 'QRIS' ? '📱 QRIS / TRANSFER BANK' : '💵 UANG TUNAI (FISIK)'}
+                        {paymentMethod === 'QRIS' ? '📱 QRIS/TRANSFER' : 'TUNAI'}
                       </span>
                     </div>
 
@@ -3711,7 +3782,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       <div className="flex-1">
                         <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-white">
                           <QrCode className="w-4 h-4 text-sky-400 shrink-0" />
-                          <span>Centang jika Dilunasi dengan QRIS / Transfer Bank (Non-Tunai)</span>
+                          <span>Centang jika Dilunasi dengan QRIS / Transfer (Non-Tunai)</span>
                         </div>
                         <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
                           Untuk pembayaran QRIS toko maupun transfer langsung ke rekening bank (BCA, Mandiri, BRI, dll).
@@ -3719,34 +3790,33 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       </div>
                     </label>
 
-                    {/* Dua Tombol Metode Pembayaran dengan Warna Background Berbeda Jelas */}
+                    {/* Dua Tombol Metode Pembayaran Tanpa Icon Agar Utuh di HP Vertikal */}
                     <div className="grid grid-cols-2 gap-2.5">
-                      {/* 1. Tombol Uang Tunai (Fisik) - DEFAULT: Emerald Green Theme */}
+                      {/* 1. Tombol Tunai - Dark Red Theme with White Font (Pure Text "Tunai") */}
                       <button
                         type="button"
                         onClick={() => handleSelectPaymentMethod('TUNAI')}
-                        className={`py-3 px-3 rounded-xl border-2 font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md ${
+                        style={{ backgroundColor: paymentMethod === 'TUNAI' ? '#7f1d1d' : '#450a0a', color: '#ffffff' }}
+                        className={`py-3 px-3 rounded-xl border-2 font-black text-sm flex items-center justify-center transition cursor-pointer shadow-md ${
                           paymentMethod === 'TUNAI'
-                            ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-300 ring-4 ring-emerald-400/50 scale-101'
-                            : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-700/80'
+                            ? 'border-red-400 ring-4 ring-red-500/50 scale-101'
+                            : 'border-red-800/80 hover:bg-red-900'
                         }`}
                       >
-                        <Banknote className="w-4 h-4 shrink-0" />
-                        <span className="truncate">💵 Uang Tunai (Fisik)</span>
+                        <span>Tunai</span>
                       </button>
 
-                      {/* 2. Tombol QRIS / Transfer (Non-Tunai) - Sky / Ocean Blue Theme */}
+                      {/* 2. Tombol QRIS/Transfer - Pure Text "QRIS/Transfer" */}
                       <button
                         type="button"
                         onClick={() => handleSelectPaymentMethod('QRIS')}
-                        className={`py-3 px-3 rounded-xl border-2 font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md ${
+                        className={`py-3 px-3 rounded-xl border-2 font-black text-sm flex items-center justify-center transition cursor-pointer shadow-md ${
                           paymentMethod === 'QRIS'
                             ? 'bg-sky-500 hover:bg-sky-400 text-slate-950 border-sky-200 ring-4 ring-sky-400/50 scale-101'
                             : 'bg-sky-950/80 hover:bg-sky-900 text-sky-300 border-sky-700/80'
                         }`}
                       >
-                        <QrCode className="w-4 h-4 shrink-0" />
-                        <span className="truncate">📱 QRIS / Transfer Bank</span>
+                        <span>QRIS/Transfer</span>
                       </button>
                     </div>
                   </div>
@@ -3787,6 +3857,65 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                           )}
                         </div>
                       </div>
+
+                      {/* TAMPILAN GAMBAR QRIS TOKO DI ATAS INPUT NOMINAL */}
+                      {qrisImage ? (
+                        <div className="bg-slate-950 p-3.5 rounded-xl border-2 border-sky-400 space-y-2 flex flex-col items-center justify-center text-center shadow-lg">
+                          <div className="flex items-center justify-between w-full text-xs font-black text-sky-300">
+                            <span className="flex items-center gap-1.5">
+                              <QrCode className="w-4 h-4 text-sky-400" />
+                              <span>Gambar QRIS Toko:</span>
+                            </span>
+                            <span className="text-[10px] bg-sky-900 text-sky-200 border border-sky-500 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                              <ZoomIn className="w-3 h-3 text-sky-300" />
+                              <span>Ketuk untuk Zoom</span>
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setQrisZoomModalOpen(true)}
+                            className="group relative cursor-pointer overflow-hidden rounded-xl border-2 border-sky-400/80 hover:border-amber-300 transition focus:outline-none focus:ring-4 focus:ring-sky-400/50 bg-white p-2 w-full max-w-[260px] shadow-md"
+                            title="Ketuk/Klik untuk memperbesar gambar QRIS di layar pop-up modal"
+                          >
+                            <img
+                              src={qrisImage}
+                              alt="Gambar QRIS Toko"
+                              className="max-h-48 sm:max-h-56 object-contain rounded-lg mx-auto transition-transform group-hover:scale-105"
+                            />
+                            <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center rounded-lg">
+                              <span className="bg-amber-400 text-slate-950 text-xs font-black px-3 py-1.5 rounded-lg border border-amber-300 shadow-md flex items-center gap-1">
+                                <Maximize2 className="w-4 h-4 text-slate-950" />
+                                <span>Perbesar QRIS</span>
+                              </span>
+                            </div>
+                          </button>
+                          <p className="text-[11px] text-sky-200/90 font-medium">
+                            👉 Tunjukkan ke pelanggan atau ketuk gambar untuk tampilan zoom penuh.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-amber-950/90 border-2 border-amber-400 p-3 rounded-xl text-amber-200 text-xs space-y-1.5 shadow-md">
+                          <div className="flex items-center justify-between font-bold text-amber-300">
+                            <span className="flex items-center gap-1.5">
+                              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span>Gambar QRIS Toko Belum Ada</span>
+                            </span>
+                            {currentUser?.role === 'ADMIN' && (
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab('settings')}
+                                className="text-[11px] bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-2 py-0.5 rounded-md transition cursor-pointer"
+                              >
+                                Unggah &rarr;
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[11px] leading-snug text-amber-100/90">
+                            Belum ada gambar QRIS. Silakan unggah di menu Admin Setting.
+                          </p>
+                        </div>
+                      )}
 
                       {/* Manual Editable Input: Nominal QRIS Diterima */}
                       <div className="bg-slate-950 p-3.5 rounded-xl border-2 border-sky-500/50 space-y-2">
@@ -3914,7 +4043,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     <>
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <label className="block text-sm sm:text-base font-black text-amber-300">Uang Diterima dari Pelanggan (Rp)</label>
+                          <label className="block text-sm sm:text-base font-black text-amber-300">Uang Dari Pelanggan</label>
                           <button
                             type="button"
                             onClick={() => setNumpadOpen(true)}
@@ -3955,40 +4084,6 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                         </button>
                       </div>
 
-                      {/* Tombol Biaya Admin & Beban Kas Toko untuk Pembayaran Tunai */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <span className="text-[11px] font-bold text-amber-300">Biaya Admin:</span>
-                        <button
-                          type="button"
-                          onClick={() => handleAddAdminFee(500)}
-                          className="text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-2.5 py-1 rounded-lg border border-amber-300 transition cursor-pointer"
-                        >
-                          + Rp 500 (Admin)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAddAdminFee(1000)}
-                          className="text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-2.5 py-1 rounded-lg border border-amber-300 transition cursor-pointer"
-                        >
-                          + Rp 1.000
-                        </button>
-                        {adminFeeAmount > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleResetAdminFee}
-                            className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-bold px-2 py-1 rounded-lg border border-rose-400 transition cursor-pointer"
-                          >
-                            ✕ Reset
-                          </button>
-                        )}
-                      </div>
-
-                      {effectiveAdminFee > 0 && (
-                        <div className="bg-amber-950/80 border border-amber-400/80 p-2 rounded-lg text-[11px] text-amber-200 font-bold flex items-center justify-between">
-                          <span>✓ Biaya Admin: +{formatRupiah(effectiveAdminFee)} (Dicatat Pendapatan Toko, Tanpa Kembalian)</span>
-                        </div>
-                      )}
-
                       <div>
                         <label className="block text-[11px] font-bold text-amber-200 mb-1">Catatan Transaksi Tunai (Opsional)</label>
                         <input
@@ -4002,7 +4097,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     </>
                   )}
 
-                  {/* Change Result - Ultra High Contrast Bright Yellow Text (No Black Font) */}
+                  {/* Change Result - Ultra High Contrast Bright Yellow Text */}
                   <div className={`p-3.5 rounded-xl border-4 flex items-center justify-between shadow-xl ${
                     changeAmount >= 0
                       ? 'bg-slate-950 border-emerald-400 text-white'
@@ -4020,33 +4115,33 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                         {changeAmount >= 0 ? formatRupiah(changeAmount) : `Kurang ${formatRupiah(Math.abs(changeAmount))}`}
                       </span>
                     </div>
-                    {changeAmount >= 0 && (
-                      <span className="bg-emerald-600 text-white text-xs sm:text-sm font-black px-3 py-1 rounded-lg border-2 border-emerald-300 shrink-0 shadow-sm">
-                        LUNAS
-                      </span>
-                    )}
                   </div>
                 </div>
 
-                  {/* Checkout Button with 1cm gap above & bright eye-catching colors */}
-                  <button
-                    disabled={cart.length === 0 || numericPaid < totalAmount}
-                    onClick={handleCheckout}
-                    style={{ marginTop: '1cm' }}
-                    className={`w-full py-4 sm:py-4.5 px-4 rounded-2xl font-black text-lg sm:text-xl shadow-2xl flex items-center justify-center space-x-2.5 transition-all border-4 ${
-                      cart.length === 0 || numericPaid < totalAmount
-                        ? 'bg-slate-300 text-slate-700 border-slate-400 cursor-not-allowed shadow-none'
-                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-amber-300 ring-4 ring-emerald-400/60 shadow-emerald-500/50 cursor-pointer active:scale-98 tracking-wide animate-bounce'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-7 h-7 stroke-[3] text-slate-950 shrink-0" />
-                    <span>Bayar dan Transaksi Selesai</span>
-                  </button>
-                </div>
+                {/* Checkout Button: bgcolor: dark green (#064e3b), font color: white (#ffffff), border color: violet (#8b5cf6) */}
+                <button
+                  disabled={cart.length === 0 || numericPaid < totalAmount}
+                  onClick={handleCheckout}
+                  style={{
+                    marginTop: '1cm',
+                    backgroundColor: cart.length === 0 || numericPaid < totalAmount ? '#cbd5e1' : '#064e3b',
+                    borderColor: cart.length === 0 || numericPaid < totalAmount ? '#94a3b8' : '#8b5cf6',
+                    color: cart.length === 0 || numericPaid < totalAmount ? '#334155' : '#ffffff'
+                  }}
+                  className={`w-full py-4 sm:py-4.5 px-4 rounded-2xl font-black text-lg sm:text-xl shadow-2xl flex items-center justify-center space-x-2.5 transition-all border-4 ${
+                    cart.length === 0 || numericPaid < totalAmount
+                      ? 'cursor-not-allowed shadow-none'
+                      : 'hover:bg-emerald-950 ring-4 ring-purple-500/40 shadow-emerald-950/50 cursor-pointer active:scale-98 tracking-wide animate-bounce'
+                  }`}
+                >
+                  <CheckCircle2 className="w-7 h-7 stroke-[3] text-white shrink-0" />
+                  <span>Bayar dan Transaksi Selesai</span>
+                </button>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
       {/* SUBMENU: LIHAT KATALOG PRODUK */}
         {activeTab === 'catalog' && (
@@ -5893,6 +5988,88 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               </div>
             </div>
 
+            {/* PENGATURAN GAMBAR QRIS TOKO */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+              <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <QrCode className="w-5 h-5 text-indigo-600" />
+                    <span>Pengaturan Gambar QRIS Toko</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Unggah file gambar kode QRIS toko Anda (PNG, JPG, WEBP). Gambar ini akan muncul secara otomatis di panel kasir POS saat memilih metode pembayaran QRIS / Transfer.
+                  </p>
+                </div>
+                {qrisImage && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveQrisImage}
+                    className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold px-3 py-1.5 rounded-xl border border-rose-200 transition flex items-center gap-1 cursor-pointer self-start sm:self-auto shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus / Reset QRIS</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                {/* Upload Action Box */}
+                <div className="bg-slate-50 border-2 border-dashed border-indigo-300 hover:border-indigo-400 rounded-2xl p-4 text-center space-y-3 transition">
+                  <div className="bg-indigo-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-indigo-600">
+                    <FileImage className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-sm text-slate-800 block">
+                      {qrisImage ? 'Ganti Gambar QRIS Toko' : 'Pilih / Unggah Gambar QRIS Toko'}
+                    </span>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Pilih file gambar QRIS dari galeri HP atau folder laptop Anda (Maksimal 5MB)
+                    </p>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl cursor-pointer shadow-sm transition">
+                    <Upload className="w-4 h-4" />
+                    <span>{qrisImage ? 'Pilih Gambar Baru' : 'Unggah File Gambar QRIS'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleQrisImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {/* Preview Box */}
+                <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center text-center space-y-2 min-h-[180px]">
+                  <span className="text-xs font-bold text-slate-700 block uppercase">
+                    Preview Tampilan QRIS Toko
+                  </span>
+
+                  {qrisImage ? (
+                    <div className="space-y-2 w-full">
+                      <div className="bg-white p-2.5 rounded-xl border-2 border-indigo-200 shadow-sm inline-block max-w-[240px]">
+                        <img
+                          src={qrisImage}
+                          alt="Preview QRIS Toko"
+                          className="max-h-48 object-contain mx-auto rounded-lg"
+                        />
+                      </div>
+                      <span className="text-[11px] text-emerald-700 font-bold block flex items-center justify-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Tersimpan di sistem & siap tampil di kasir POS</span>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-slate-400 py-6 space-y-1">
+                      <QrCode className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5]" />
+                      <p className="text-xs font-medium text-slate-500">Belum ada gambar QRIS yang diunggah.</p>
+                      <p className="text-[11px] text-slate-400">Pilih file gambar di sebelah kiri untuk mengunggah.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* 4. Preferensi Printer Thermal (Ukuran Kertas 58mm / 80mm) */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -7124,6 +7301,58 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 Batal / Abaikan
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* QRIS STORE IMAGE ZOOM MODAL (POP-UP ZOOM FOR CUSTOMER SCAN) */}
+      {qrisZoomModalOpen && qrisImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-3 sm:p-5 animate-modal-pop"
+          onClick={() => setQrisZoomModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl border-4 border-sky-400 shadow-2xl max-w-md w-full p-5 space-y-4 text-center relative"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center space-x-2 text-sky-950 font-black text-base sm:text-lg">
+                <QrCode className="w-6 h-6 text-sky-600" />
+                <span>QRIS Pembayaran Toko</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQrisZoomModalOpen(false)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 rounded-xl transition cursor-pointer"
+                title="Tutup Modal"
+              >
+                <X className="w-5 h-5 stroke-[2.5]" />
+              </button>
+            </div>
+
+            {/* Instruction Banner */}
+            <div className="bg-sky-50 border border-sky-200 p-2.5 rounded-xl text-xs font-bold text-sky-900">
+              📱 Arahkan kamera HP / Scan QRIS m-banking pelanggan ke gambar di bawah ini:
+            </div>
+
+            {/* High-Resolution QRIS Image Frame */}
+            <div className="bg-white p-3 rounded-2xl border-2 border-slate-300 shadow-inner flex items-center justify-center">
+              <img
+                src={qrisImage}
+                alt="QRIS Toko Pembayaran Zoom"
+                className="w-full max-h-[60vh] object-contain rounded-xl select-none"
+              />
+            </div>
+
+            {/* Close Action Button */}
+            <button
+              type="button"
+              onClick={() => setQrisZoomModalOpen(false)}
+              className="w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-black text-sm rounded-2xl shadow-lg transition border-2 border-sky-400 cursor-pointer active:scale-98 tracking-wide"
+            >
+              Tutup Modal Zoom (Selesai Scan)
+            </button>
           </div>
         </div>
       )}
