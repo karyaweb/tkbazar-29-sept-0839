@@ -70,7 +70,10 @@ import {
   Coffee,
   Lightbulb,
   HeartHandshake,
-  TrendingDown
+  TrendingDown,
+  Maximize2,
+  ZoomIn,
+  FileImage
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import html2canvas from 'html2canvas';
@@ -172,6 +175,42 @@ export default function App() {
   const [mobileMarginMode, setMobileMarginMode] = useState<'default' | 'max_width'>(() => {
     return (localStorage.getItem('tokobazar_mobile_margin_mode') as 'default' | 'max_width') || 'default';
   });
+
+  // Store QRIS Image Base64 State & Modal Zoom
+  const [qrisImage, setQrisImage] = useState<string>(() => {
+    return localStorage.getItem('qris_image_base64') || '';
+  });
+  const [qrisZoomModalOpen, setQrisZoomModalOpen] = useState<boolean>(false);
+
+  // FileReader Handler for Store QRIS Image Base64
+  const handleQrisImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showAlert('⚠️ Ukuran file gambar terlalu besar! Maksimal 5MB.', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setQrisImage(base64String);
+        localStorage.setItem('qris_image_base64', base64String);
+        showAlert('✅ Gambar QRIS toko berhasil disimpan!', 'success');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveQrisImage = () => {
+    setConfirmDialog({
+      message: 'Apakah Anda yakin ingin menghapus / reset gambar QRIS toko ini?',
+      onConfirm: () => {
+        setQrisImage('');
+        localStorage.removeItem('qris_image_base64');
+        showAlert('Gambar QRIS toko berhasil dihapus.', 'info');
+      }
+    });
+  };
 
   // Mobile POS Battery Monitor State
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
@@ -3819,6 +3858,65 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                         </div>
                       </div>
 
+                      {/* TAMPILAN GAMBAR QRIS TOKO DI ATAS INPUT NOMINAL */}
+                      {qrisImage ? (
+                        <div className="bg-slate-950 p-3.5 rounded-xl border-2 border-sky-400 space-y-2 flex flex-col items-center justify-center text-center shadow-lg">
+                          <div className="flex items-center justify-between w-full text-xs font-black text-sky-300">
+                            <span className="flex items-center gap-1.5">
+                              <QrCode className="w-4 h-4 text-sky-400" />
+                              <span>Gambar QRIS Toko:</span>
+                            </span>
+                            <span className="text-[10px] bg-sky-900 text-sky-200 border border-sky-500 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                              <ZoomIn className="w-3 h-3 text-sky-300" />
+                              <span>Ketuk untuk Zoom</span>
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setQrisZoomModalOpen(true)}
+                            className="group relative cursor-pointer overflow-hidden rounded-xl border-2 border-sky-400/80 hover:border-amber-300 transition focus:outline-none focus:ring-4 focus:ring-sky-400/50 bg-white p-2 w-full max-w-[260px] shadow-md"
+                            title="Ketuk/Klik untuk memperbesar gambar QRIS di layar pop-up modal"
+                          >
+                            <img
+                              src={qrisImage}
+                              alt="Gambar QRIS Toko"
+                              className="max-h-48 sm:max-h-56 object-contain rounded-lg mx-auto transition-transform group-hover:scale-105"
+                            />
+                            <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center rounded-lg">
+                              <span className="bg-amber-400 text-slate-950 text-xs font-black px-3 py-1.5 rounded-lg border border-amber-300 shadow-md flex items-center gap-1">
+                                <Maximize2 className="w-4 h-4 text-slate-950" />
+                                <span>Perbesar QRIS</span>
+                              </span>
+                            </div>
+                          </button>
+                          <p className="text-[11px] text-sky-200/90 font-medium">
+                            👉 Tunjukkan ke pelanggan atau ketuk gambar untuk tampilan zoom penuh.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-amber-950/90 border-2 border-amber-400 p-3 rounded-xl text-amber-200 text-xs space-y-1.5 shadow-md">
+                          <div className="flex items-center justify-between font-bold text-amber-300">
+                            <span className="flex items-center gap-1.5">
+                              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span>Gambar QRIS Toko Belum Ada</span>
+                            </span>
+                            {currentUser?.role === 'ADMIN' && (
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab('settings')}
+                                className="text-[11px] bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-2 py-0.5 rounded-md transition cursor-pointer"
+                              >
+                                Unggah &rarr;
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[11px] leading-snug text-amber-100/90">
+                            Belum ada gambar QRIS. Silakan unggah di menu Admin Setting.
+                          </p>
+                        </div>
+                      )}
+
                       {/* Manual Editable Input: Nominal QRIS Diterima */}
                       <div className="bg-slate-950 p-3.5 rounded-xl border-2 border-sky-500/50 space-y-2">
                         <div className="flex items-center justify-between">
@@ -5890,6 +5988,88 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
               </div>
             </div>
 
+            {/* PENGATURAN GAMBAR QRIS TOKO */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+              <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <QrCode className="w-5 h-5 text-indigo-600" />
+                    <span>Pengaturan Gambar QRIS Toko</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Unggah file gambar kode QRIS toko Anda (PNG, JPG, WEBP). Gambar ini akan muncul secara otomatis di panel kasir POS saat memilih metode pembayaran QRIS / Transfer.
+                  </p>
+                </div>
+                {qrisImage && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveQrisImage}
+                    className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold px-3 py-1.5 rounded-xl border border-rose-200 transition flex items-center gap-1 cursor-pointer self-start sm:self-auto shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus / Reset QRIS</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                {/* Upload Action Box */}
+                <div className="bg-slate-50 border-2 border-dashed border-indigo-300 hover:border-indigo-400 rounded-2xl p-4 text-center space-y-3 transition">
+                  <div className="bg-indigo-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-indigo-600">
+                    <FileImage className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-sm text-slate-800 block">
+                      {qrisImage ? 'Ganti Gambar QRIS Toko' : 'Pilih / Unggah Gambar QRIS Toko'}
+                    </span>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Pilih file gambar QRIS dari galeri HP atau folder laptop Anda (Maksimal 5MB)
+                    </p>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl cursor-pointer shadow-sm transition">
+                    <Upload className="w-4 h-4" />
+                    <span>{qrisImage ? 'Pilih Gambar Baru' : 'Unggah File Gambar QRIS'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleQrisImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {/* Preview Box */}
+                <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center text-center space-y-2 min-h-[180px]">
+                  <span className="text-xs font-bold text-slate-700 block uppercase">
+                    Preview Tampilan QRIS Toko
+                  </span>
+
+                  {qrisImage ? (
+                    <div className="space-y-2 w-full">
+                      <div className="bg-white p-2.5 rounded-xl border-2 border-indigo-200 shadow-sm inline-block max-w-[240px]">
+                        <img
+                          src={qrisImage}
+                          alt="Preview QRIS Toko"
+                          className="max-h-48 object-contain mx-auto rounded-lg"
+                        />
+                      </div>
+                      <span className="text-[11px] text-emerald-700 font-bold block flex items-center justify-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Tersimpan di sistem & siap tampil di kasir POS</span>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-slate-400 py-6 space-y-1">
+                      <QrCode className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5]" />
+                      <p className="text-xs font-medium text-slate-500">Belum ada gambar QRIS yang diunggah.</p>
+                      <p className="text-[11px] text-slate-400">Pilih file gambar di sebelah kiri untuk mengunggah.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* 4. Preferensi Printer Thermal (Ukuran Kertas 58mm / 80mm) */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -7121,6 +7301,58 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                 Batal / Abaikan
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* QRIS STORE IMAGE ZOOM MODAL (POP-UP ZOOM FOR CUSTOMER SCAN) */}
+      {qrisZoomModalOpen && qrisImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-3 sm:p-5 animate-modal-pop"
+          onClick={() => setQrisZoomModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl border-4 border-sky-400 shadow-2xl max-w-md w-full p-5 space-y-4 text-center relative"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center space-x-2 text-sky-950 font-black text-base sm:text-lg">
+                <QrCode className="w-6 h-6 text-sky-600" />
+                <span>QRIS Pembayaran Toko</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQrisZoomModalOpen(false)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 rounded-xl transition cursor-pointer"
+                title="Tutup Modal"
+              >
+                <X className="w-5 h-5 stroke-[2.5]" />
+              </button>
+            </div>
+
+            {/* Instruction Banner */}
+            <div className="bg-sky-50 border border-sky-200 p-2.5 rounded-xl text-xs font-bold text-sky-900">
+              📱 Arahkan kamera HP / Scan QRIS m-banking pelanggan ke gambar di bawah ini:
+            </div>
+
+            {/* High-Resolution QRIS Image Frame */}
+            <div className="bg-white p-3 rounded-2xl border-2 border-slate-300 shadow-inner flex items-center justify-center">
+              <img
+                src={qrisImage}
+                alt="QRIS Toko Pembayaran Zoom"
+                className="w-full max-h-[60vh] object-contain rounded-xl select-none"
+              />
+            </div>
+
+            {/* Close Action Button */}
+            <button
+              type="button"
+              onClick={() => setQrisZoomModalOpen(false)}
+              className="w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-black text-sm rounded-2xl shadow-lg transition border-2 border-sky-400 cursor-pointer active:scale-98 tracking-wide"
+            >
+              Tutup Modal Zoom (Selesai Scan)
+            </button>
           </div>
         </div>
       )}
