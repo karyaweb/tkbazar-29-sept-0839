@@ -5,6 +5,7 @@
 
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
+import http from 'http';
 import path from 'path';
 import fs from 'fs';
 
@@ -520,6 +521,9 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+  const httpServer = http.createServer(app);
+
   // Serve frontend: Vite dev server in development, static files in production
   if (process.env.NODE_ENV === 'production') {
     const distPath = path.join(process.cwd(), 'dist');
@@ -528,15 +532,18 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   } else {
+    const isHmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: isHmrDisabled ? false : { server: httpServer }
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-  app.listen(port, '0.0.0.0', () => {
+  httpServer.listen(port, '0.0.0.0', () => {
     console.log(`TokoBazar server running at http://localhost:${port}`);
   });
 }
