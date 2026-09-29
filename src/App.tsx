@@ -3700,11 +3700,11 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   </div>
                 </div>
 
-                {/* Payment & Change Calculator with 1cm Vertical Gap & Dark Violet Box (Wider when mobileMarginMode is max_width) */}
+                {/* Payment & Change Calculator with 1cm Vertical Gap & Dark Violet Box (Wider max 98% when mobileMarginMode is max_width) */}
                 <div
                   style={{ marginTop: '1cm', backgroundColor: '#3b0764', borderColor: '#7e22ce' }}
-                  className={`w-full rounded-2xl border-4 shadow-2xl space-y-3 text-white transition-all ${
-                    mobileMarginMode === 'max_width' ? 'p-2.5 sm:p-4' : 'p-4'
+                  className={`rounded-2xl border-4 shadow-2xl space-y-3 text-white transition-all ${
+                    mobileMarginMode === 'max_width' ? 'w-[98%] mx-auto p-2.5 sm:p-4' : 'w-full p-4'
                   }`}
                 >
                   {/* Payment Method Selector & Centang QRIS / Transfer */}
@@ -3718,7 +3718,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                           ? 'bg-sky-400 text-slate-950 border-sky-300 ring-2 ring-sky-300/60'
                           : 'bg-red-800 text-white border-red-500 ring-2 ring-red-400/60'
                       }`}>
-                        {paymentMethod === 'QRIS' ? '📱 QRIS/TRANSFER' : '💵 TUNAI'}
+                        {paymentMethod === 'QRIS' ? '📱 QRIS/TRANSFER' : 'TUNAI'}
                       </span>
                     </div>
 
@@ -3751,34 +3751,33 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                       </div>
                     </label>
 
-                    {/* Dua Tombol Metode Pembayaran dengan Warna Background Berbeda Jelas */}
+                    {/* Dua Tombol Metode Pembayaran Tanpa Icon Agar Utuh di HP Vertikal */}
                     <div className="grid grid-cols-2 gap-2.5">
-                      {/* 1. Tombol Tunai - Dark Red Theme with White Font */}
+                      {/* 1. Tombol Tunai - Dark Red Theme with White Font (Pure Text "Tunai") */}
                       <button
                         type="button"
                         onClick={() => handleSelectPaymentMethod('TUNAI')}
-                        className={`py-3 px-3 rounded-xl border-2 font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md ${
+                        style={{ backgroundColor: paymentMethod === 'TUNAI' ? '#7f1d1d' : '#450a0a', color: '#ffffff' }}
+                        className={`py-3 px-3 rounded-xl border-2 font-black text-sm flex items-center justify-center transition cursor-pointer shadow-md ${
                           paymentMethod === 'TUNAI'
-                            ? 'bg-red-900 hover:bg-red-800 text-white border-red-400 ring-4 ring-red-500/50 scale-101'
-                            : 'bg-red-950/80 hover:bg-red-900 text-white border-red-800/80'
+                            ? 'border-red-400 ring-4 ring-red-500/50 scale-101'
+                            : 'border-red-800/80 hover:bg-red-900'
                         }`}
                       >
-                        <Banknote className="w-4 h-4 shrink-0 text-white" />
-                        <span className="truncate">💵 Tunai</span>
+                        <span>Tunai</span>
                       </button>
 
-                      {/* 2. Tombol QRIS/Transfer (Non-Tunai) - Sky / Ocean Blue Theme */}
+                      {/* 2. Tombol QRIS/Transfer - Pure Text "QRIS/Transfer" */}
                       <button
                         type="button"
                         onClick={() => handleSelectPaymentMethod('QRIS')}
-                        className={`py-3 px-3 rounded-xl border-2 font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md ${
+                        className={`py-3 px-3 rounded-xl border-2 font-black text-sm flex items-center justify-center transition cursor-pointer shadow-md ${
                           paymentMethod === 'QRIS'
                             ? 'bg-sky-500 hover:bg-sky-400 text-slate-950 border-sky-200 ring-4 ring-sky-400/50 scale-101'
                             : 'bg-sky-950/80 hover:bg-sky-900 text-sky-300 border-sky-700/80'
                         }`}
                       >
-                        <QrCode className="w-4 h-4 shrink-0" />
-                        <span className="truncate">📱 QRIS/Transfer</span>
+                        <span>QRIS/Transfer</span>
                       </button>
                     </div>
                   </div>
@@ -3946,7 +3945,7 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                     <>
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <label className="block text-sm sm:text-base font-black text-amber-300">Uang Diterima dari Pelanggan (Rp)</label>
+                          <label className="block text-sm sm:text-base font-black text-amber-300">Uang Dari Pelanggan</label>
                           <button
                             type="button"
                             onClick={() => setNumpadOpen(true)}
@@ -4021,15 +4020,20 @@ Terima kasih telah berbelanja di TokoBazar! 🙏`;
                   </div>
                 </div>
 
-                {/* Checkout Button: bgcolor: dark green, font color: white, border color: violet */}
+                {/* Checkout Button: bgcolor: dark green (#064e3b), font color: white (#ffffff), border color: violet (#8b5cf6) */}
                 <button
                   disabled={cart.length === 0 || numericPaid < totalAmount}
                   onClick={handleCheckout}
-                  style={{ marginTop: '1cm' }}
+                  style={{
+                    marginTop: '1cm',
+                    backgroundColor: cart.length === 0 || numericPaid < totalAmount ? '#cbd5e1' : '#064e3b',
+                    borderColor: cart.length === 0 || numericPaid < totalAmount ? '#94a3b8' : '#8b5cf6',
+                    color: cart.length === 0 || numericPaid < totalAmount ? '#334155' : '#ffffff'
+                  }}
                   className={`w-full py-4 sm:py-4.5 px-4 rounded-2xl font-black text-lg sm:text-xl shadow-2xl flex items-center justify-center space-x-2.5 transition-all border-4 ${
                     cart.length === 0 || numericPaid < totalAmount
-                      ? 'bg-slate-300 text-slate-700 border-slate-400 cursor-not-allowed shadow-none'
-                      : 'bg-emerald-900 hover:bg-emerald-850 text-white border-violet-500 ring-4 ring-emerald-500/30 shadow-emerald-950/50 cursor-pointer active:scale-98 tracking-wide animate-bounce'
+                      ? 'cursor-not-allowed shadow-none'
+                      : 'hover:bg-emerald-950 ring-4 ring-purple-500/40 shadow-emerald-950/50 cursor-pointer active:scale-98 tracking-wide animate-bounce'
                   }`}
                 >
                   <CheckCircle2 className="w-7 h-7 stroke-[3] text-white shrink-0" />
